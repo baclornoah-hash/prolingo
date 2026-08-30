@@ -134,10 +134,10 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
 .user-info{ display:flex; flex-direction:column; line-height:1.2; }
 .user-info small{ color: var(--text-soft); }
 .logout-btn{
-  background:none; border:none; color:var(--text-soft);
-  font-size:0.95rem; padding:4px 6px; border-radius:8px; line-height:1;
+  background:none; border:1px solid var(--line); color:var(--text-soft);
+  font-size:0.78rem; font-weight:700; padding:8px 14px; border-radius:999px;
 }
-.logout-btn:hover{ background: var(--paper); color: var(--ink); }
+.logout-btn:hover{ background: var(--paper); color: var(--ink); border-color: var(--violet); }
 
 /* ============================================================
    VIEW SWITCHING
