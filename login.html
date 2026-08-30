@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prolingo — Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Page-specific layout only — shared tokens/colors come from style.css */
+  body.login-body{
+    display:grid; place-items:center; min-height:100vh;
+    background: radial-gradient(circle at 20% 20%, #efe6fb, #fbf7f2 60%);
+  }
+  .login-card{
+    width:100%; max-width:380px; background:#fff;
+    border:1px solid var(--line); border-radius: var(--radius-lg);
+    padding:32px; box-shadow: var(--shadow-pop);
+  }
+  .login-brand{ display:flex; align-items:center; gap:10px; margin-bottom:22px; }
+  .login-brand .brand-mark{ transform:rotate(-6deg); }
+  .login-brand strong{ font-family: var(--font-display); font-size:1.3rem; }
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:0.8rem; font-weight:700; margin-bottom:6px; color:var(--text-soft); }
+  .field input{
+    width:100%; padding:11px 14px; border:1px solid var(--line);
+    border-radius:10px; font-size:0.9rem; font-family:inherit;
+  }
+  .field input:focus{ border-color: var(--violet); }
+  .login-submit{
+    width:100%; background: var(--violet); color:#fff; border:none;
+    padding:12px; border-radius:10px; font-weight:700; font-size:0.9rem; margin-top:6px;
+  }
+  .login-error{
+    background:#fdeceb; color:#b3311c; border-radius:8px; padding:9px 12px;
+    font-size:0.8rem; margin-bottom:14px; display:none;
+  }
+  .login-foot{ margin-top:18px; font-size:0.78rem; color:var(--text-soft); text-align:center; }
+  .role-hint{
+    display:flex; gap:8px; margin-bottom:20px; font-size:0.72rem;
+  }
+  .role-hint span{
+    flex:1; text-align:center; padding:8px 6px; border-radius:8px;
+    background: var(--paper); border:1px solid var(--line); color:var(--text-soft);
+  }
+</style>
+</head>
+<body class="login-body">
+
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="brand-mark">紐</span>
+      <strong>Prolingo</strong>
+    </div>
+
+    <div class="role-hint">
+      <span>Admin</span><span>Teacher</span><span>Student</span>
+    </div>
+
+    <div class="login-error" id="loginError"></div>
+
+    <form id="loginForm">
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" required autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="login-submit">Sign in</button>
+    </form>
+
+    <p class="login-foot">One login for every role — the dashboard you land on depends on your account.</p>
+  </div>
+
+<!-- ============================================================
+     FIREBASE
+     Replace firebaseConfig with your own project's config
+     (Firebase console → Project settings → General → Your apps)
+     ============================================================ -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getAuth,
+    signInWithEmailAndPassword
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import {
+    getFirestore,
+    doc,
+    getDoc
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  const form = document.getElementById("loginForm");
+  const errorBox = document.getElementById("loginError");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorBox.style.display = "none";
+
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+
+    try {
+      // 1. Authenticate
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+
+      // 2. Look up this user's role from Firestore
+      //    (users/{uid} document created at signup — see admin-users.html)
+      const userDoc = await getDoc(doc(db, "users", cred.user.uid));
+
+      if (!userDoc.exists()) {
+        throw new Error("No role assigned to this account yet. Ask an admin to set one up.");
+      }
+
+      const { role, name } = userDoc.data();
+
+      // 3. Store minimal session info for the dashboard to read
+      sessionStorage.setItem("prolingo_role", role);
+      sessionStorage.setItem("prolingo_name", name || email);
+
+      // 4. Route by role — same dashboard shell, different views unlocked
+      window.location.href = "index.html";
+
+    } catch (err) {
+      errorBox.textContent = friendlyError(err);
+      errorBox.style.display = "block";
+    }
+  });
+
+  function friendlyError(err){
+    const code = err.code || "";
+    if (code.includes("wrong-password") || code.includes("invalid-credential")) return "Incorrect email or password.";
+    if (code.includes("user-not-found")) return "No account found with that email.";
+    if (code.includes("too-many-requests")) return "Too many attempts — try again shortly.";
+    return err.message || "Something went wrong signing in.";
+  }
+</script>
+
+</body>
+</html>
