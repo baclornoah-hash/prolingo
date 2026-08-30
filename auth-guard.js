@@ -1,77 +1,250 @@
 // ============================================================
-// AUTH GUARD
-// Include this BEFORE script.js on every page that needs a
-// logged-in user (index.html / dashboard, calendar, classroom).
-//
-// It does three things:
-//   1. Kicks anyone with no session back to login.html
-//   2. Shows/hides UI based on role (admin / teacher / student)
-//   3. Wires up a logout button (id="logoutBtn", add one to topbar)
+// PROLINGO AUTH GUARD
+// Firebase Authentication = source of truth
+// Firestore users/{uid} = source of truth for role/name
 // ============================================================
 
-const role = sessionStorage.getItem("prolingo_role");
-const name = sessionStorage.getItem("prolingo_name");
+import {
+  initializeApp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 
-if (!role) {
-  window.location.href = "login.html";
-}
+import {
+  getAuth,
+  onAuthStateChanged,
+  signOut
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-// ------------------------------------------------------------
-// ROLE → PERMISSIONS MAP
-// Add/remove capabilities here as the app grows — everything
-// else reads from this single source of truth.
-// ------------------------------------------------------------
-const PERMISSIONS = {
-  admin:   { uploadSlides: true,  manageCalendarTemplate: true, manageAccounts: true, viewAllClassrooms: true },
-  teacher: { uploadSlides: true,  manageCalendarTemplate: false, manageAccounts: false, viewAllClassrooms: false },
-  student: { uploadSlides: false, manageCalendarTemplate: false, manageAccounts: false, viewAllClassrooms: false }
+import {
+  getFirestore,
+  doc,
+  getDoc
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ============================================================
+// FIREBASE CONFIG
+// ============================================================
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBGWM-ac-jKpP1qjW7MBEUAI-Tls7tP_Rk",
+  authDomain: "prolingo-2de9d.firebaseapp.com",
+  projectId: "prolingo-2de9d",
+  storageBucket: "prolingo-2de9d.firebasestorage.app",
+  messagingSenderId: "59292786878",
+  appId: "1:59292786878:web:bd6e737458fdd8d9aabeef"
 };
 
-const can = (permission) => !!(PERMISSIONS[role] && PERMISSIONS[role][permission]);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-// ------------------------------------------------------------
-// APPLY VISIBILITY ONCE THE DOM IS READY
-// Elements are hidden by data attribute rather than JS class
-// names, so designers can find them without reading this file:
-//   <div data-requires="uploadSlides"> ... </div>
-// ------------------------------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
+// ============================================================
+// ROLE → PERMISSIONS
+// ============================================================
+
+const PERMISSIONS = {
+  admin: {
+    uploadSlides: true,
+    manageOwnCalendar: true,
+    manageCalendarTemplate: true,
+    manageAccounts: true,
+    viewAllClassrooms: true
+  },
+
+  teacher: {
+    uploadSlides: true,
+    manageOwnCalendar: true,
+    manageCalendarTemplate: false,
+    manageAccounts: false,
+    viewAllClassrooms: false
+  },
+
+  student: {
+    uploadSlides: false,
+    manageOwnCalendar: false,
+    manageCalendarTemplate: false,
+    manageAccounts: false,
+    viewAllClassrooms: false
+  }
+};
+
+// ============================================================
+// AUTHENTICATION
+// ============================================================
+
+onAuthStateChanged(auth, async (user) => {
+
+  // No Firebase user = not logged in
+  if (!user) {
+    window.location.href = "login.html";
+    return;
+  }
+
+  try {
+
+    // Get this user's profile
+    const userRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userRef);
+
+    if (!userSnap.exists()) {
+      console.error("No user profile found.");
+
+      await signOut(auth);
+      window.location.href = "login.html";
+      return;
+    }
+
+    const userData = userSnap.data();
+
+    const role = String(userData.role || "").toLowerCase();
+    const name = userData.name || user.displayName || user.email || "User";
+
+    // Invalid role
+    if (!PERMISSIONS[role]) {
+      console.error("Invalid Prolingo role:", role);
+
+      await signOut(auth);
+      window.location.href = "login.html";
+      return;
+    }
+
+    // Temporary UI/session cache
+    sessionStorage.setItem("prolingo_role", role);
+    sessionStorage.setItem("prolingo_name", name);
+
+    // Apply everything after the page exists
+    initializeUserInterface(role, name);
+
+  } catch (error) {
+
+    console.error("Authentication guard error:", error);
+
+    if (error.code === "permission-denied") {
+      alert("Your account is authenticated, but your Prolingo profile cannot be accessed. Please contact an administrator.");
+    }
+
+    await signOut(auth);
+    window.location.href = "login.html";
+  }
+
+});
+
+// ============================================================
+// USER INTERFACE
+// ============================================================
+
+function initializeUserInterface(role, name) {
 
   document.querySelectorAll("[data-requires]").forEach(el => {
+
     const needed = el.dataset.requires;
-    el.style.display = can(needed) ? "" : "none";
+
+    el.style.display = can(role, needed) ? "" : "none";
+
   });
 
-  // Fill in the user chip with the real logged-in name/role
   const userName = document.getElementById("userName");
   const userMeta = document.getElementById("userMeta");
   const userAvatar = document.querySelector(".user-avatar");
 
-  if (userName) userName.textContent = name || "Signed in";
-  if (userMeta) userMeta.textContent = roleLabel(role);
-  if (userAvatar) userAvatar.textContent = initials(name);
-
-  // The manual "Teacher / Student" toggle from the prototype is no
-  // longer needed now that role comes from a real login — remove it.
-  const roleSwitch = document.getElementById("roleSwitch");
-  if (roleSwitch) roleSwitch.remove();
-
-  // Logout button — add <button id="logoutBtn">Log out</button> to topbar
-  const logoutBtn = document.getElementById("logoutBtn");
-  if (logoutBtn) {
-    logoutBtn.addEventListener("click", () => {
-      sessionStorage.removeItem("prolingo_role");
-      sessionStorage.removeItem("prolingo_name");
-      window.location.href = "login.html";
-    });
+  if (userName) {
+    userName.textContent = name;
   }
-});
 
-function roleLabel(r){
-  return { admin: "Admin · Panda English", teacher: "Teacher", student: "Student" }[r] || r;
+  if (userMeta) {
+    userMeta.textContent = roleLabel(role);
+  }
+
+  if (userAvatar) {
+    userAvatar.textContent = initials(name);
+  }
+
+  // Remove old prototype role switcher if it exists
+  const roleSwitch = document.getElementById("roleSwitch");
+
+  if (roleSwitch) {
+    roleSwitch.remove();
+  }
+
+  // ==========================================================
+  // LOGOUT
+  // ==========================================================
+
+  const logoutBtn = document.getElementById("logoutBtn");
+
+  if (logoutBtn) {
+
+    logoutBtn.addEventListener("click", async () => {
+
+      logoutBtn.disabled = true;
+      logoutBtn.textContent = "Logging out…";
+
+      try {
+
+        await signOut(auth);
+
+        sessionStorage.removeItem("prolingo_role");
+        sessionStorage.removeItem("prolingo_name");
+
+        window.location.href = "login.html";
+
+      } catch (error) {
+
+        console.error("Logout failed:", error);
+
+        logoutBtn.disabled = false;
+        logoutBtn.textContent = "Log out";
+
+        alert("Unable to log out. Please try again.");
+
+      }
+
+    });
+
+  }
+
 }
 
-function initials(n){
-  if (!n) return "?";
-  return n.split(" ").map(p => p[0]).join("").slice(0,2).toUpperCase();
+// ============================================================
+// PERMISSION CHECK
+// ============================================================
+
+function can(role, permission) {
+
+  return !!(
+    PERMISSIONS[role] &&
+    PERMISSIONS[role][permission]
+  );
+
+}
+
+// ============================================================
+// ROLE LABEL
+// ============================================================
+
+function roleLabel(role) {
+
+  return {
+    admin: "Admin · Panda English",
+    teacher: "Teacher",
+    student: "Student"
+  }[role] || role;
+
+}
+
+// ============================================================
+// AVATAR INITIALS
+// ============================================================
+
+function initials(name) {
+
+  if (!name) return "?";
+
+  return name
+    .trim()
+    .split(/\s+/)
+    .map(part => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
 }
