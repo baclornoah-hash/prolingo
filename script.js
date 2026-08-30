@@ -1,4 +1,33 @@
 // ============================================================
+// FIREBASE — same project as login.html
+// This file is loaded as type="module" (see index.html) so it
+// can use real import statements like login.html does.
+// ============================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  orderBy
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBGWM-ac-jKpP1qjW7MBEUAI-Tls7tP_Rk",
+  authDomain: "prolingo-2de9d.firebaseapp.com",
+  projectId: "prolingo-2de9d",
+  storageBucket: "prolingo-2de9d.firebasestorage.app",
+  messagingSenderId: "59292786878",
+  appId: "1:59292786878:web:bd6e737458fdd8d9aabeef"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ============================================================
 // VIEW SWITCHING (Dashboard / Calendar / Classroom)
 // ============================================================
 const views = {
@@ -53,11 +82,26 @@ function renderStats({ today, nextIn, nextLabel, week, students }){
   document.getElementById("statStudents").textContent = students ?? "—";
 }
 
+// Called automatically every time the live lessons data changes —
+// see the bottom of the onSnapshot listener below.
+function updateStatsFromBookings(){
+  const todaysCount = bookings.filter(b => b.day === TODAY_COLUMN).length;
+  const uniqueStudents = new Set(
+    bookings.map(b => b.label).filter(l => l && l !== "Open slot")
+  );
+  renderStats({
+    today: todaysCount || "—",
+    nextIn: todaysCount ? "Today" : "—",
+    nextLabel: todaysCount ? `${todaysCount} lesson${todaysCount === 1 ? "" : "s"} today` : "Nothing scheduled yet",
+    week: bookings.length || "—",
+    students: uniqueStudents.size || "—"
+  });
+}
+
 // ============================================================
 // DASHBOARD — UP NEXT LESSON LIST
-// lessons starts EMPTY. This is real app state, not a demo array —
-// push real lesson objects here once they come from Firestore.
-// Shape: { level, title, when, student, status: "live" | "wait", etaLabel }
+// Populated live from Firestore (see LESSONS LIVE SYNC below).
+// Shape stored in lesson objects: { level, title, when, student, status: "live" | "wait" }
 // ============================================================
 let lessons = [];
 
@@ -82,7 +126,7 @@ function renderLessons(){
         <span>${lesson.when} · Student: ${lesson.student}</span>
       </div>
       <button class="join-btn ${lesson.status === "wait" ? "join-btn--wait" : ""}">
-        ${lesson.status === "wait" ? `In ${lesson.etaLabel}` : "Join classroom"}
+        ${lesson.status === "wait" ? "Scheduled" : "Join classroom"}
       </button>
     `;
     if (lesson.status !== "wait"){
@@ -96,23 +140,19 @@ renderLessons();
 
 // ============================================================
 // CALENDAR GRID
-// bookings starts EMPTY — this used to ship with fake sample
-// bookings baked in, which made a brand-new account look already
-// full. Real slots should come from Firestore's "lessons"
-// collection, keyed by day/time.
-//
-// To add a slot once you're wired to a backend:
-//   bookings.push({ day: 5, slot: 7, type: "booked", label: "Miguel" });
-//   buildCalendar();
+// "days" is still a fixed demo week (real date navigation is a
+// later step) — but the SLOTS shown now come from live Firestore
+// data instead of a hardcoded array.
 // ============================================================
 const days = ["Mon Aug 24","Tue Aug 25","Wed Aug 26","Thu Aug 27","Fri Aug 28","Today Aug 29","Sun Aug 30"];
+const TODAY_COLUMN = 5; // index of "Today" in the days array above
 
 const timeSlots = [
   "06:00","06:30","07:00","07:30","08:00","08:30","09:00",
   "09:30","10:00","10:30","11:00","11:30","12:00"
 ];
 
-let bookings = []; // real data goes here — intentionally empty by default
+let bookings = []; // filled live from Firestore — see LESSONS LIVE SYNC
 
 function buildCalendar(){
   const tbody = document.getElementById("calBody");
@@ -149,13 +189,94 @@ function buildCalendar(){
 buildCalendar();
 
 // Prev/Next just gives lightweight feedback in this static prototype —
-// swap for a real date-range fetch once bookings come from a backend.
+// real week-switching (loading a different date range from Firestore)
+// is a later step.
 document.getElementById("calPrev").addEventListener("click", () => {
   document.getElementById("calRange").textContent = "Aug 17 – Aug 23";
 });
 document.getElementById("calNext").addEventListener("click", () => {
   document.getElementById("calRange").textContent = "Aug 31 – Sep 6";
 });
+
+// ============================================================
+// LESSONS LIVE SYNC
+// Listens to the "lessons" collection in real time. Anyone signed
+// in can read it (per firestore.rules); only admin/teacher can
+// write to it. Every change anyone makes updates everyone's screen
+// automatically — no page refresh needed.
+// ============================================================
+onSnapshot(query(collection(db, "lessons"), orderBy("slot")), (snapshot) => {
+  bookings = [];
+  lessons = [];
+
+  snapshot.forEach(docSnap => {
+    const data = docSnap.data();
+
+    // Feed the calendar grid
+    bookings.push({
+      day: data.day,
+      slot: data.slot,
+      type: data.type || "booked",
+      label: data.label || data.studentName || "Booked"
+    });
+
+    // Feed the dashboard "Up next" list — only show today's lessons there
+    if (data.day === TODAY_COLUMN){
+      lessons.push({
+        level: data.level || "—",
+        title: data.title || "Untitled lesson",
+        when: `${days[data.day]} · ${timeSlots[data.slot] || ""}`,
+        student: data.studentName || "—",
+        status: data.status === "live" ? "live" : "wait"
+      });
+    }
+  });
+
+  buildCalendar();
+  renderLessons();
+  updateStatsFromBookings();
+});
+
+// ============================================================
+// ADMIN / TEACHER — ADD A LESSON SLOT
+// Simple prompt-based flow for now (fast to use from a phone/
+// tablet). This writes directly to Firestore's "lessons"
+// collection — every signed-in user's calendar updates instantly.
+// ============================================================
+const updateCalendarBtn = document.querySelector(".solid-btn[data-requires='manageOwnCalendar']");
+
+if (updateCalendarBtn){
+  updateCalendarBtn.addEventListener("click", async () => {
+    const dayInput = prompt("Which day? Enter a number:\n0=Mon 1=Tue 2=Wed 3=Thu 4=Fri 5=Today 6=Sun");
+    if (dayInput === null) return;
+
+    const timeLabel = timeSlots.map((t, i) => `${i}: ${t}`).join("\n");
+    const slotInput = prompt(`Which time slot? Enter the number:\n${timeLabel}`);
+    if (slotInput === null) return;
+
+    const studentName = prompt("Student name (or leave blank for an open slot):") || "Open slot";
+    const title = prompt("Lesson title (e.g. English Program P2 · Lesson 0):") || "Untitled lesson";
+    const level = prompt("Level label (e.g. Lv 6):") || "—";
+
+    try {
+      await addDoc(collection(db, "lessons"), {
+        day: Number(dayInput),
+        slot: Number(slotInput),
+        type: "booked",
+        label: studentName,
+        studentName,
+        title,
+        level,
+        status: "wait",
+        createdAt: Date.now()
+      });
+    } catch (err) {
+      alert("Couldn't save that lesson: " + err.message);
+    }
+  });
+}
+
+
 
 // ============================================================
 // ADMIN / TEACHER UPLOAD — shows the chosen filename
