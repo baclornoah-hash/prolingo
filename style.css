@@ -120,16 +120,6 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
 .topbar-title p{ margin:4px 0 0; color: var(--text-soft); }
 .topbar-actions{ display:flex; align-items:center; gap:16px; }
 
-.role-switch{
-  display:flex; background:var(--surface); border:1px solid var(--line);
-  border-radius:999px; padding:3px; box-shadow: var(--shadow-card);
-}
-.role-btn{
-  background:none; border:none; padding:8px 16px; border-radius:999px;
-  font-weight:600; font-size:0.85rem; color:var(--text-soft);
-}
-.role-btn.is-active{ background: var(--violet); color:#fff; }
-
 .user-chip{
   display:flex; align-items:center; gap:10px;
   background:var(--surface); border:1px solid var(--line);
@@ -143,6 +133,11 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
 }
 .user-info{ display:flex; flex-direction:column; line-height:1.2; }
 .user-info small{ color: var(--text-soft); }
+.logout-btn{
+  background:none; border:1px solid var(--line); color:var(--text-soft);
+  font-size:0.78rem; font-weight:700; padding:8px 14px; border-radius:999px;
+}
+.logout-btn:hover{ background: var(--paper); color: var(--ink); border-color: var(--violet); }
 
 /* ============================================================
    VIEW SWITCHING
@@ -191,7 +186,14 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   padding:4px 10px; border-radius:999px;
 }
 
+.empty-state{
+  color: var(--text-soft); font-size:0.85rem; text-align:center;
+  padding: 22px 12px; margin:0; border:1.5px dashed var(--line);
+  border-radius: var(--radius-md); background: var(--paper);
+}
+
 .lesson-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.lesson-list:empty{ display:none; }
 .lesson-row{
   display:flex; align-items:center; gap:14px;
   background: var(--paper); border:1px solid var(--line);
@@ -251,6 +253,7 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
 .cal-scroll{
   background: var(--surface); border:1px solid var(--line); border-radius: var(--radius-lg);
   overflow:auto; box-shadow: var(--shadow-card); max-height:560px;
+  margin-bottom: 12px;
 }
 .cal-grid{ border-collapse:collapse; width:100%; min-width:820px; }
 .cal-grid th{
