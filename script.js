@@ -1,386 +1,236 @@
-/* ============================================================
-   TOKENS
-   ============================================================ */
-:root{
-  --ink:        #241b38;
-  --violet:     #5b3aa6;
-  --violet-dk:  #3d2678;
-  --violet-lt:  #efe6fb;
-  --orange:     #ff7a2e;
-  --orange-dk:  #e0631c;
-  --paper:      #fbf7f2;
-  --surface:    #ffffff;
-  --line:       #e7dff2;
-  --teal:       #2fb6a3;
-  --text-soft:  #6b6180;
+// ============================================================
+// VIEW SWITCHING (Dashboard / Calendar / Classroom)
+// ============================================================
+const views = {
+  dashboard: { title: "Dashboard", subtitle: "Where today's lessons begin." },
+  calendar:  { title: "Calendar",  subtitle: "Publish time, manage bookings." },
+  classroom: { title: "Classroom", subtitle: "Live lesson in progress." }
+};
 
-  --radius-lg: 22px;
-  --radius-md: 14px;
-  --radius-sm: 8px;
+const railLinks = document.querySelectorAll(".rail-link");
+const viewTitle = document.getElementById("viewTitle");
+const viewSubtitle = document.getElementById("viewSubtitle");
 
-  --font-display: 'Baloo 2', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', monospace;
+function showView(name){
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("is-active"));
+  document.getElementById(`view-${name}`).classList.add("is-active");
 
-  --shadow-card: 0 6px 20px -6px rgba(91,58,166,0.18);
-  --shadow-pop: 0 14px 34px -10px rgba(36,27,56,0.28);
+  railLinks.forEach(link => {
+    link.classList.toggle("is-active", link.dataset.view === name);
+  });
+
+  viewTitle.textContent = views[name].title;
+  viewSubtitle.textContent = views[name].subtitle;
 }
 
-*{ box-sizing: border-box; }
-html{ -webkit-font-smoothing: antialiased; }
-body{
-  margin:0;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-body);
-  min-height:100vh;
-}
-button{ font-family: inherit; cursor:pointer; }
-:focus-visible{ outline: 3px solid var(--orange); outline-offset: 2px; }
-h1,h2,h3{ font-family: var(--font-display); margin:0; }
+railLinks.forEach(link => {
+  link.addEventListener("click", () => showView(link.dataset.view));
+});
 
-/* ============================================================
-   APP SHELL
-   ============================================================ */
-.app{
-  display:grid;
-  grid-template-columns: 248px 1fr;
-  min-height:100vh;
-}
+// "Open calendar →" shortcut button on the dashboard panel
+document.querySelectorAll("[data-goto]").forEach(btn => {
+  btn.addEventListener("click", () => showView(btn.dataset.goto));
+});
 
-/* ---- Rail / sidebar ---- */
-.rail{
-  background: linear-gradient(180deg, var(--violet-dk), var(--ink) 130%);
-  color: #fff;
-  padding: 28px 20px;
-  display:flex;
-  flex-direction:column;
-  position: sticky;
-  top:0;
-  height:100vh;
-}
-.rail-brand{
-  display:flex; align-items:center; gap:10px;
-  font-family: var(--font-display);
-  font-weight:700; font-size:1.25rem;
-  margin-bottom: 40px;
-}
-.brand-mark{
-  width:34px; height:34px; border-radius:10px;
-  background: var(--orange);
-  display:grid; place-items:center;
-  font-size:1rem; color:#2a1400;
-  transform: rotate(-6deg);
-}
-.rail-nav{ display:flex; flex-direction:column; gap:6px; }
-.rail-link{
-  display:flex; align-items:center; gap:12px;
-  background:transparent; border:none; color:rgba(255,255,255,0.72);
-  text-align:left; padding:12px 14px; border-radius:12px;
-  font-size:0.95rem; font-weight:600;
-  transition: background .15s ease, color .15s ease;
-}
-.rail-icon{ font-size:0.85rem; width:16px; text-align:center; }
-.rail-link:hover{ background: rgba(255,255,255,0.08); color:#fff; }
-.rail-link.is-active{
-  background: var(--orange);
-  color:#2a1400;
-  box-shadow: var(--shadow-pop);
-}
-.rail-foot{
-  margin-top:auto;
-  padding-top:22px;
-  border-top:1px solid rgba(255,255,255,0.14);
-  font-size:0.78rem;
-  color: rgba(255,255,255,0.55);
-  line-height:1.5;
-}
-.stamp-mini{
-  display:inline-block;
-  font-family: var(--font-mono);
-  font-size:0.65rem;
-  letter-spacing:0.08em;
-  border:1.5px dashed rgba(255,255,255,0.4);
-  border-radius:999px;
-  padding:3px 10px;
-  margin-bottom:10px;
-  transform: rotate(-4deg);
+// NOTE: there is no role-switching code in this file anymore.
+// Which account you're signed in as — and what you can see or do —
+// is decided once at login and enforced by auth-guard.js. This
+// file only renders data and handles UI interactions.
+
+// ============================================================
+// DASHBOARD STATS
+// Starts at "—" (see index.html). Call renderStats() with real
+// numbers once you have a Firestore query wired up, e.g.:
+//
+//   const snap = await getDocs(collection(db, "lessons"));
+//   renderStats({ today: ..., nextLabel: ..., week: ..., students: ... });
+// ============================================================
+function renderStats({ today, nextIn, nextLabel, week, students }){
+  document.getElementById("statToday").textContent = today ?? "—";
+  document.getElementById("statNext").textContent = nextIn ?? "—";
+  document.getElementById("statNextLabel").textContent = nextLabel ?? "Nothing scheduled yet";
+  document.getElementById("statWeek").textContent = week ?? "—";
+  document.getElementById("statStudents").textContent = students ?? "—";
 }
 
-/* ============================================================
-   MAIN / TOPBAR
-   ============================================================ */
-.main{ padding: 28px 40px 60px; max-width: 1180px; }
+// ============================================================
+// DASHBOARD — UP NEXT LESSON LIST
+// lessons starts EMPTY. This is real app state, not a demo array —
+// push real lesson objects here once they come from Firestore.
+// Shape: { level, title, when, student, status: "live" | "wait", etaLabel }
+// ============================================================
+let lessons = [];
 
-.topbar{
-  display:flex; justify-content:space-between; align-items:flex-start;
-  margin-bottom: 28px; gap:20px; flex-wrap:wrap;
-}
-.topbar-title h1{ font-size:1.9rem; }
-.topbar-title p{ margin:4px 0 0; color: var(--text-soft); }
-.topbar-actions{ display:flex; align-items:center; gap:16px; }
+function renderLessons(){
+  const list = document.getElementById("lessonList");
+  const empty = document.getElementById("lessonEmpty");
+  list.innerHTML = "";
 
-.user-chip{
-  display:flex; align-items:center; gap:10px;
-  background:var(--surface); border:1px solid var(--line);
-  border-radius:999px; padding:6px 14px 6px 6px;
-  box-shadow: var(--shadow-card);
-}
-.user-avatar{
-  width:32px; height:32px; border-radius:50%;
-  background: var(--orange); color:#2a1400;
-  display:grid; place-items:center; font-weight:700; font-size:0.8rem;
-}
-.user-info{ display:flex; flex-direction:column; line-height:1.2; }
-.user-info small{ color: var(--text-soft); }
-.logout-btn{
-  background:none; border:1px solid var(--line); color:var(--text-soft);
-  font-size:0.78rem; font-weight:700; padding:8px 14px; border-radius:999px;
-}
-.logout-btn:hover{ background: var(--paper); color: var(--ink); border-color: var(--violet); }
+  if (lessons.length === 0){
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
 
-/* ============================================================
-   VIEW SWITCHING
-   ============================================================ */
-.view{ display:none; animation: fade .25s ease; }
-.view.is-active{ display:block; }
-@keyframes fade{ from{ opacity:0; transform: translateY(6px);} to{opacity:1; transform:none;} }
-
-/* ============================================================
-   DASHBOARD
-   ============================================================ */
-.stat-row{
-  display:grid; grid-template-columns: repeat(4,1fr); gap:16px;
-  margin-bottom: 24px;
-}
-.stat-card{
-  background: var(--surface); border:1px solid var(--line);
-  border-radius: var(--radius-md); padding: 18px 20px;
-  display:flex; flex-direction:column; gap:4px;
-  box-shadow: var(--shadow-card);
-}
-.stat-card--accent{
-  background: linear-gradient(135deg, var(--orange), var(--orange-dk));
-  color:#fff; border:none;
-}
-.stat-card--accent .stat-eyebrow,
-.stat-card--accent .stat-label{ color: rgba(255,255,255,0.85); }
-.stat-eyebrow{ font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-soft); font-weight:700; }
-.stat-num{ font-family: var(--font-display); font-size:1.8rem; }
-.stat-label{ font-size:0.82rem; color:var(--text-soft); }
-
-.dash-grid{
-  display:grid; grid-template-columns: 1.5fr 1fr; gap:20px;
-}
-.panel{
-  background:var(--surface); border:1px solid var(--line);
-  border-radius: var(--radius-lg); padding:22px;
-  box-shadow: var(--shadow-card);
-}
-.panel-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
-.ghost-btn{
-  background:none; border:none; color:var(--violet); font-weight:700; font-size:0.85rem;
-}
-.tag-pill{
-  background: var(--violet-lt); color: var(--violet); font-size:0.72rem; font-weight:700;
-  padding:4px 10px; border-radius:999px;
+  lessons.forEach(lesson => {
+    const li = document.createElement("li");
+    li.className = "lesson-row";
+    li.innerHTML = `
+      <span class="stamp" data-tone="${lesson.status}">${lesson.level}</span>
+      <div class="lesson-info">
+        <strong>${lesson.title}</strong>
+        <span>${lesson.when} · Student: ${lesson.student}</span>
+      </div>
+      <button class="join-btn ${lesson.status === "wait" ? "join-btn--wait" : ""}">
+        ${lesson.status === "wait" ? `In ${lesson.etaLabel}` : "Join classroom"}
+      </button>
+    `;
+    if (lesson.status !== "wait"){
+      li.querySelector(".join-btn").addEventListener("click", () => showView("classroom"));
+    }
+    list.appendChild(li);
+  });
 }
 
-.empty-state{
-  color: var(--text-soft); font-size:0.85rem; text-align:center;
-  padding: 22px 12px; margin:0; border:1.5px dashed var(--line);
-  border-radius: var(--radius-md); background: var(--paper);
+renderLessons();
+
+// ============================================================
+// CALENDAR GRID
+// bookings starts EMPTY — this used to ship with fake sample
+// bookings baked in, which made a brand-new account look already
+// full. Real slots should come from Firestore's "lessons"
+// collection, keyed by day/time.
+//
+// To add a slot once you're wired to a backend:
+//   bookings.push({ day: 5, slot: 7, type: "booked", label: "Miguel" });
+//   buildCalendar();
+// ============================================================
+const days = ["Mon Aug 24","Tue Aug 25","Wed Aug 26","Thu Aug 27","Fri Aug 28","Today Aug 29","Sun Aug 30"];
+
+const timeSlots = [
+  "06:00","06:30","07:00","07:30","08:00","08:30","09:00",
+  "09:30","10:00","10:30","11:00","11:30","12:00"
+];
+
+let bookings = []; // real data goes here — intentionally empty by default
+
+function buildCalendar(){
+  const tbody = document.getElementById("calBody");
+  const empty = document.getElementById("calEmpty");
+  tbody.innerHTML = "";
+
+  timeSlots.forEach((time, rowIndex) => {
+    const tr = document.createElement("tr");
+
+    const timeTd = document.createElement("td");
+    timeTd.className = "time-cell";
+    const end = timeSlots[rowIndex+1] || "12:30";
+    timeTd.textContent = `${time}–${end}`;
+    tr.appendChild(timeTd);
+
+    days.forEach((day, colIndex) => {
+      const td = document.createElement("td");
+      const match = bookings.find(b => b.day === colIndex && b.slot === rowIndex);
+      if (match){
+        const slot = document.createElement("div");
+        slot.className = `slot slot--${match.type}`;
+        slot.textContent = match.label;
+        td.appendChild(slot);
+      }
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+
+  empty.style.display = bookings.length === 0 ? "block" : "none";
 }
 
-.lesson-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
-.lesson-list:empty{ display:none; }
-.lesson-row{
-  display:flex; align-items:center; gap:14px;
-  background: var(--paper); border:1px solid var(--line);
-  border-radius: var(--radius-md); padding:12px 14px;
-}
-.stamp{
-  font-family: var(--font-mono); font-weight:600; font-size:0.75rem;
-  border:2px dashed var(--violet); color:var(--violet);
-  border-radius:999px; padding:6px 10px; transform: rotate(-5deg);
-  flex-shrink:0;
-}
-.stamp[data-tone="live"]{ border-color: var(--orange); color: var(--orange-dk); }
-.lesson-info{ display:flex; flex-direction:column; flex:1; gap:2px; }
-.lesson-info strong{ font-size:0.9rem; }
-.lesson-info span{ font-size:0.78rem; color:var(--text-soft); }
-.join-btn{
-  background: var(--orange); color:#2a1400; border:none; font-weight:700;
-  padding:9px 16px; border-radius:10px; font-size:0.82rem; white-space:nowrap;
-}
-.join-btn--wait{ background: var(--violet-lt); color: var(--violet); }
+buildCalendar();
 
-.panel-copy{ color:var(--text-soft); font-size:0.88rem; margin:0 0 16px; }
-.dropzone{
-  display:flex; align-items:center; gap:14px;
-  border:2px dashed var(--violet);
-  background: var(--violet-lt);
-  border-radius: var(--radius-md);
-  padding:18px; cursor:pointer; font-size:0.85rem;
-}
-.dropzone-icon{ font-size:1.4rem; color:var(--violet); }
-.dropzone-file{ margin-top:10px; font-size:0.8rem; color:var(--text-soft); font-family: var(--font-mono); }
+// Prev/Next just gives lightweight feedback in this static prototype —
+// swap for a real date-range fetch once bookings come from a backend.
+document.getElementById("calPrev").addEventListener("click", () => {
+  document.getElementById("calRange").textContent = "Aug 17 – Aug 23";
+});
+document.getElementById("calNext").addEventListener("click", () => {
+  document.getElementById("calRange").textContent = "Aug 31 – Sep 6";
+});
 
-/* ============================================================
-   CALENDAR
-   ============================================================ */
-.cal-toolbar{
-  display:flex; align-items:center; justify-content:space-between;
-  flex-wrap:wrap; gap:14px; margin-bottom:16px;
-}
-.cal-nav{ display:flex; align-items:center; gap:10px; font-weight:700; }
-.icon-btn{
-  background:var(--surface); border:1px solid var(--line); border-radius:8px;
-  width:30px; height:30px; display:inline-grid; place-items:center;
-}
-.cal-legend{ display:flex; gap:16px; font-size:0.78rem; color:var(--text-soft); flex-wrap:wrap; }
-.cal-legend span{ display:flex; align-items:center; gap:6px; }
-.dot{ width:9px; height:9px; border-radius:50%; display:inline-block; }
-.dot--peak{ background: var(--orange); }
-.dot--booked{ background: var(--violet); }
-.dot--reserved{ background: var(--teal); }
-.dot--pending{ background: #cbbfe0; }
-.solid-btn{
-  background:var(--violet); color:#fff; border:none; font-weight:700;
-  padding:10px 18px; border-radius:10px; font-size:0.85rem;
+// ============================================================
+// ADMIN / TEACHER UPLOAD — shows the chosen filename
+// (no server wired yet — connect to Firebase Storage or your
+// own upload endpoint to actually persist the file)
+// ============================================================
+const pptInput = document.getElementById("pptInput");
+const dropzoneFile = document.getElementById("dropzoneFile");
+
+if (pptInput){
+  pptInput.addEventListener("change", () => {
+    if (pptInput.files.length){
+      dropzoneFile.textContent = `Selected: ${pptInput.files[0].name}`;
+    }
+  });
 }
 
-.cal-scroll{
-  background: var(--surface); border:1px solid var(--line); border-radius: var(--radius-lg);
-  overflow:auto; box-shadow: var(--shadow-card); max-height:560px;
-  margin-bottom: 12px;
-}
-.cal-grid{ border-collapse:collapse; width:100%; min-width:820px; }
-.cal-grid th{
-  position:sticky; top:0; background: var(--surface); z-index:2;
-  text-align:left; font-size:0.78rem; color:var(--text-soft); font-weight:700;
-  padding:10px 8px; border-bottom:1px solid var(--line);
-}
-.cal-grid th span{ display:block; font-weight:400; font-size:0.7rem; }
-.cal-grid th.is-today{ color: var(--orange-dk); }
-.cal-time-col{ width:78px; font-family: var(--font-mono); }
-.cal-grid td{
-  border-bottom:1px solid var(--line); border-right:1px solid var(--line);
-  padding:4px; font-size:0.72rem; height:40px; vertical-align:top;
-}
-.cal-grid td.time-cell{
-  font-family: var(--font-mono); color:var(--text-soft); background: var(--paper);
-  white-space:nowrap;
-}
-.slot{
-  border-radius:6px; padding:4px 6px; font-weight:600; font-size:0.68rem;
-  height:100%; display:flex; align-items:center;
-}
-.slot--booked{ background: var(--violet-lt); color: var(--violet); }
-.slot--peak{ background:#ffe3d1; color:var(--orange-dk); }
-.slot--pending{ background:#f1eef7; color:#8f84a6; border:1px dashed #cbbfe0; }
+// ============================================================
+// CLASSROOM — mic/camera/filter toggles
+// ============================================================
+document.querySelectorAll(".pill-toggle").forEach(btn => {
+  btn.addEventListener("click", () => btn.classList.toggle("is-on"));
+});
 
-/* ============================================================
-   CLASSROOM
-   ============================================================ */
-.classroom{ display:grid; grid-template-columns: 1.7fr 1fr; gap:20px; align-items:start; }
+// ============================================================
+// CLASSROOM — CHAT (local echo only, no backend wired yet)
+// ============================================================
+const chatLog = document.getElementById("chatLog");
+const chatInput = document.getElementById("chatInput");
+const chatSend = document.getElementById("chatSend");
 
-.classroom-stage{
-  background: var(--ink); border-radius: var(--radius-lg);
-  overflow:hidden; box-shadow: var(--shadow-pop);
-}
-.stage-toolbar{
-  display:flex; align-items:center; justify-content:space-between;
-  padding:14px 18px; color:#fff;
-}
-.room-code{ font-family: var(--font-mono); font-size:0.78rem; color:rgba(255,255,255,0.65); }
-.room-code span{ color:#fff; }
-.stage-timer{ font-size:0.8rem; color:rgba(255,255,255,0.75); }
-.stage-timer strong{ color: var(--orange); }
-.start-btn{
-  background: var(--orange); color:#2a1400; border:none; font-weight:700;
-  padding:9px 18px; border-radius:10px; font-size:0.82rem;
+function addChatMessage(author, text){
+  const p = document.createElement("p");
+  p.innerHTML = `<strong>${author}:</strong> ${text}`;
+  chatLog.appendChild(p);
+  chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-.slide-frame{
-  background: linear-gradient(160deg, var(--violet), #7a4fce);
-  margin: 0 14px 14px; border-radius: var(--radius-md);
-  padding: 26px; color:#fff; position:relative; min-height:320px;
-  display:flex; flex-direction:column; justify-content:space-between;
-}
-.slide-badge{
-  align-self:flex-start; background: rgba(255,255,255,0.16);
-  font-size:0.72rem; font-weight:700; padding:5px 12px; border-radius:999px;
-  font-family: var(--font-mono);
-}
-.slide-art h2{ font-size:1.8rem; margin-bottom:10px; }
-.slide-art p{ margin:4px 0; opacity:0.9; font-size:0.92rem; }
-.slide-controls{
-  display:flex; align-items:center; gap:8px; background: rgba(255,255,255,0.12);
-  border-radius:999px; padding:6px 12px; width:fit-content; font-size:0.78rem;
-}
-.slide-controls .icon-btn{ background: rgba(255,255,255,0.18); border:none; color:#fff; }
-
-.classroom-side{ display:flex; flex-direction:column; gap:16px; }
-
-.video-porthole{
-  background: var(--surface); border:1px solid var(--line); border-radius: var(--radius-lg);
-  padding:18px; text-align:center; box-shadow: var(--shadow-card);
-}
-.video-porthole-ring{
-  width:150px; height:150px; margin:0 auto 14px;
-  border-radius:50%; padding:6px;
-  background: repeating-conic-gradient(var(--orange) 0deg 18deg, transparent 18deg 36deg);
-}
-.video-fill{
-  width:100%; height:100%; border-radius:50%;
-  background: linear-gradient(160deg, var(--violet-dk), var(--violet));
-  display:grid; place-items:center; color:#fff; font-size:0.78rem; font-weight:600;
-}
-.video-tools{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; }
-.pill-toggle{
-  border:1px solid var(--line); background: var(--paper); color: var(--text-soft);
-  font-size:0.75rem; font-weight:700; padding:7px 12px; border-radius:999px;
-}
-.pill-toggle.is-on{ background: var(--violet-lt); color: var(--violet); border-color:transparent; }
-
-.roster, .chat{
-  background:var(--surface); border:1px solid var(--line); border-radius: var(--radius-lg);
-  padding:18px; box-shadow: var(--shadow-card);
-}
-.roster h3, .chat h3{ font-size:0.95rem; margin-bottom:10px; }
-.roster ul{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
-.roster li{ display:flex; align-items:center; gap:8px; font-size:0.85rem; }
-.roster em{ margin-left:auto; font-style:normal; color:var(--text-soft); font-size:0.72rem; }
-.avatar-dot{ width:9px; height:9px; border-radius:50%; background: var(--teal); }
-.avatar-dot--away{ background:#cbbfe0; }
-
-.chat-log{ display:flex; flex-direction:column; gap:8px; margin-bottom:12px; max-height:130px; overflow:auto; }
-.chat-log p{ margin:0; font-size:0.82rem; line-height:1.4; }
-.chat-input{ display:flex; gap:8px; }
-.chat-input input{
-  flex:1; border:1px solid var(--line); border-radius:999px; padding:9px 14px; font-size:0.82rem;
-}
-.chat-input button{
-  background: var(--violet); color:#fff; border:none; border-radius:999px; padding:9px 16px;
-  font-weight:700; font-size:0.8rem;
+if (chatSend){
+  chatSend.addEventListener("click", () => {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    addChatMessage("You", text);
+    chatInput.value = "";
+  });
 }
 
-/* ============================================================
-   RESPONSIVE
-   ============================================================ */
-@media (max-width: 980px){
-  .app{ grid-template-columns:1fr; }
-  .rail{ position:relative; height:auto; flex-direction:row; align-items:center; padding:16px 20px; }
-  .rail-brand{ margin-bottom:0; }
-  .rail-nav{ flex-direction:row; margin-left:auto; }
-  .rail-foot{ display:none; }
-  .main{ padding:24px; }
-  .stat-row{ grid-template-columns: repeat(2,1fr); }
-  .dash-grid{ grid-template-columns:1fr; }
-  .classroom{ grid-template-columns:1fr; }
+// ============================================================
+// CLASSROOM — ROOM STATE
+// Replace this stub with a real join/room lookup once a backend
+// exists (e.g. reading the lesson doc for the room the user tapped
+// "Join classroom" on).
+// ============================================================
+function loadRoom(room){
+  document.getElementById("roomCode").textContent = room?.code ?? "—";
+  document.getElementById("slideBadge").textContent = room?.levelLabel ?? "No lesson loaded";
+  document.getElementById("slideTitle").textContent = room?.title ?? "Waiting for a lesson";
+  document.getElementById("slideBody").textContent = room?.body ??
+    "Once a teacher starts a class or uploads slides, they'll appear here for everyone in the room.";
+  document.getElementById("videoLabel").textContent = room?.teacherName
+    ? `Teacher · ${room.teacherName}` : "Waiting to join…";
+
+  const rosterList = document.getElementById("rosterList");
+  const rosterEmpty = document.getElementById("rosterEmpty");
+  rosterList.innerHTML = "";
+  if (room?.roster?.length){
+    rosterEmpty.style.display = "none";
+    room.roster.forEach(person => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="avatar-dot ${person.away ? "avatar-dot--away" : ""}"></span> ${person.name} <em>${person.role}</em>`;
+      rosterList.appendChild(li);
+    });
+  } else {
+    rosterEmpty.style.display = "block";
+  }
 }
 
-@media (prefers-reduced-motion: reduce){
-  .view{ animation:none; }
-}
+loadRoom(null); // no room joined yet — this is the honest starting state
