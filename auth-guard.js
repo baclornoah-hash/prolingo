@@ -1,12 +1,4 @@
-// ============================================================
-// PROLINGO AUTH GUARD
-// Firebase Authentication = source of truth
-// Firestore users/{uid} = source of truth for role/name
-// ============================================================
-
-import {
-  initializeApp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 
 import {
   getAuth,
@@ -20,12 +12,9 @@ import {
   getDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// ============================================================
-// FIREBASE CONFIG
-// ============================================================
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBGWM-ac-jKpP1qjW7MBEUAI-Tls7tP_Rk",
+  apiKey: "AIzaSyBGWM-acjKpP1qjW7MBEUAI-Tls7tP_Rk",
   authDomain: "prolingo-2de9d.firebaseapp.com",
   projectId: "prolingo-2de9d",
   storageBucket: "prolingo-2de9d.firebasestorage.app",
@@ -33,15 +22,14 @@ const firebaseConfig = {
   appId: "1:59292786878:web:bd6e737458fdd8d9aabeef"
 };
 
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ============================================================
-// ROLE → PERMISSIONS
-// ============================================================
 
 const PERMISSIONS = {
+
   admin: {
     uploadSlides: true,
     manageOwnCalendar: true,
@@ -65,161 +53,219 @@ const PERMISSIONS = {
     manageAccounts: false,
     viewAllClassrooms: false
   }
+
 };
 
-// ============================================================
-// AUTHENTICATION
-// ============================================================
 
 onAuthStateChanged(auth, async (user) => {
 
-  // No Firebase user = not logged in
+  console.log("ProLingo Firebase user:", user);
+
   if (!user) {
+    console.log("No Firebase user. Returning to login.");
     window.location.href = "login.html";
     return;
   }
 
+
   try {
 
-    // Get this user's profile
+    console.log("Firebase UID:", user.uid);
+
     const userRef = doc(db, "users", user.uid);
+
+    console.log("Reading:", `users/${user.uid}`);
+
     const userSnap = await getDoc(userRef);
 
+    console.log("User document exists:", userSnap.exists());
+
+
     if (!userSnap.exists()) {
-      console.error("No user profile found.");
 
-      await signOut(auth);
-      window.location.href = "login.html";
+      console.error(
+        "Firebase authentication succeeded, but users/" +
+        user.uid +
+        " does not exist."
+      );
+
+      alert(
+        "Your login worked, but your Prolingo user profile was not found.\n\n" +
+        "Firebase UID:\n" +
+        user.uid
+      );
+
       return;
     }
 
-    const userData = userSnap.data();
 
-    const role = String(userData.role || "").toLowerCase();
-    const name = userData.name || user.displayName || user.email || "User";
+    const data = userSnap.data();
 
-    // Invalid role
+    console.log("User profile:", data);
+
+
+    const role = String(data.role || "").toLowerCase();
+
+    const name =
+      data.name ||
+      user.displayName ||
+      user.email ||
+      "User";
+
+
     if (!PERMISSIONS[role]) {
-      console.error("Invalid Prolingo role:", role);
 
-      await signOut(auth);
-      window.location.href = "login.html";
+      console.error("Invalid role:", role);
+
+      alert(
+        "Your account has an invalid Prolingo role:\n\n" +
+        role
+      );
+
       return;
     }
 
-    // Temporary UI/session cache
-    sessionStorage.setItem("prolingo_role", role);
-    sessionStorage.setItem("prolingo_name", name);
 
-    // Apply everything after the page exists
-    initializeUserInterface(role, name);
+    sessionStorage.setItem(
+      "prolingo_role",
+      role
+    );
 
-  } catch (error) {
+    sessionStorage.setItem(
+      "prolingo_name",
+      name
+    );
 
-    console.error("Authentication guard error:", error);
 
-    if (error.code === "permission-denied") {
-      alert("Your account is authenticated, but your Prolingo profile cannot be accessed. Please contact an administrator.");
-    }
+    initializeUI(role, name);
 
-    await signOut(auth);
-    window.location.href = "login.html";
+  }
+
+  catch (error) {
+
+    console.error(
+      "PROLINGO AUTH ERROR:",
+      error
+    );
+
+    alert(
+      "Prolingo authentication error:\n\n" +
+      error.code +
+      "\n\n" +
+      error.message
+    );
+
+    // IMPORTANT:
+    // Do NOT sign the user out here.
+    // We want to see the actual error first.
   }
 
 });
 
-// ============================================================
-// USER INTERFACE
-// ============================================================
 
-function initializeUserInterface(role, name) {
+function initializeUI(role, name) {
 
-  document.querySelectorAll("[data-requires]").forEach(el => {
+  console.log(
+    "ProLingo initialized:",
+    role,
+    name
+  );
 
-    const needed = el.dataset.requires;
 
-    el.style.display = can(role, needed) ? "" : "none";
+  document
+    .querySelectorAll("[data-requires]")
+    .forEach(el => {
 
-  });
+      const permission =
+        el.dataset.requires;
 
-  const userName = document.getElementById("userName");
-  const userMeta = document.getElementById("userMeta");
-  const userAvatar = document.querySelector(".user-avatar");
+      if (
+        PERMISSIONS[role] &&
+        PERMISSIONS[role][permission]
+      ) {
+        el.style.display = "";
+      } else {
+        el.style.display = "none";
+      }
+
+    });
+
+
+  const userName =
+    document.getElementById("userName");
+
+  const userMeta =
+    document.getElementById("userMeta");
+
+  const userAvatar =
+    document.querySelector(".user-avatar");
+
 
   if (userName) {
     userName.textContent = name;
   }
 
+
   if (userMeta) {
-    userMeta.textContent = roleLabel(role);
+    userMeta.textContent =
+      roleLabel(role);
   }
+
 
   if (userAvatar) {
-    userAvatar.textContent = initials(name);
+    userAvatar.textContent =
+      initials(name);
   }
 
-  // Remove old prototype role switcher if it exists
-  const roleSwitch = document.getElementById("roleSwitch");
 
-  if (roleSwitch) {
-    roleSwitch.remove();
-  }
+  const logoutBtn =
+    document.getElementById("logoutBtn");
 
-  // ==========================================================
-  // LOGOUT
-  // ==========================================================
-
-  const logoutBtn = document.getElementById("logoutBtn");
 
   if (logoutBtn) {
 
-    logoutBtn.addEventListener("click", async () => {
+    logoutBtn.addEventListener(
+      "click",
+      async () => {
 
-      logoutBtn.disabled = true;
-      logoutBtn.textContent = "Logging out…";
+        try {
 
-      try {
+          await signOut(auth);
 
-        await signOut(auth);
+          sessionStorage.removeItem(
+            "prolingo_role"
+          );
 
-        sessionStorage.removeItem("prolingo_role");
-        sessionStorage.removeItem("prolingo_name");
+          sessionStorage.removeItem(
+            "prolingo_name"
+          );
 
-        window.location.href = "login.html";
+          window.location.href =
+            "login.html";
 
-      } catch (error) {
+        }
 
-        console.error("Logout failed:", error);
+        catch (error) {
 
-        logoutBtn.disabled = false;
-        logoutBtn.textContent = "Log out";
+          console.error(
+            "Logout error:",
+            error
+          );
 
-        alert("Unable to log out. Please try again.");
+          alert(
+            "Logout failed:\n\n" +
+            error.message
+          );
+
+        }
 
       }
-
-    });
+    );
 
   }
 
 }
 
-// ============================================================
-// PERMISSION CHECK
-// ============================================================
-
-function can(role, permission) {
-
-  return !!(
-    PERMISSIONS[role] &&
-    PERMISSIONS[role][permission]
-  );
-
-}
-
-// ============================================================
-// ROLE LABEL
-// ============================================================
 
 function roleLabel(role) {
 
@@ -231,9 +277,6 @@ function roleLabel(role) {
 
 }
 
-// ============================================================
-// AVATAR INITIALS
-// ============================================================
 
 function initials(name) {
 
@@ -242,7 +285,7 @@ function initials(name) {
   return name
     .trim()
     .split(/\s+/)
-    .map(part => part[0])
+    .map(x => x[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
