@@ -48,16 +48,21 @@
       </div>
 
       <div class="topbar-actions">
-        <div class="role-switch" id="roleSwitch">
-          <button class="role-btn is-active" data-role="teacher">Teacher</button>
-          <button class="role-btn" data-role="student">Student</button>
-        </div>
+        <!--
+          No role switcher here on purpose. Role is decided once,
+          at login (see login.html + auth-guard.js), and cannot be
+          changed from inside the app. auth-guard.js fills in
+          #userName / #userMeta / .user-avatar from the signed-in
+          account, and shows/hides anything tagged data-requires="…"
+          based on that account's real role.
+        -->
         <div class="user-chip">
-          <span class="user-avatar">LB</span>
+          <span class="user-avatar">--</span>
           <span class="user-info">
-            <strong id="userName">Lei B.</strong>
-            <small id="userMeta">Admin · Panda English</small>
+            <strong id="userName">Loading…</strong>
+            <small id="userMeta">—</small>
           </span>
+          <button id="logoutBtn" class="logout-btn" title="Log out">⏻</button>
         </div>
       </div>
     </header>
@@ -65,25 +70,30 @@
     <!-- ============ DASHBOARD VIEW ============ -->
     <section class="view is-active" id="view-dashboard">
 
+      <!--
+        Stat values start blank (—) rather than fake numbers.
+        script.js has a renderStats(data) function — wire it to a
+        real Firestore query when lessons/enrollments exist.
+      -->
       <div class="stat-row">
         <div class="stat-card">
           <span class="stat-eyebrow">Today</span>
-          <strong class="stat-num">5</strong>
+          <strong class="stat-num" id="statToday">—</strong>
           <span class="stat-label">Lessons scheduled</span>
         </div>
         <div class="stat-card stat-card--accent">
           <span class="stat-eyebrow">Next up</span>
-          <strong class="stat-num">27:43</strong>
-          <span class="stat-label">Until Natee (EN) joins</span>
+          <strong class="stat-num" id="statNext">—</strong>
+          <span class="stat-label" id="statNextLabel">Nothing scheduled yet</span>
         </div>
         <div class="stat-card">
           <span class="stat-eyebrow">This week</span>
-          <strong class="stat-num">32</strong>
+          <strong class="stat-num" id="statWeek">—</strong>
           <span class="stat-label">Classroom hours logged</span>
         </div>
         <div class="stat-card">
           <span class="stat-eyebrow">Students</span>
-          <strong class="stat-num">18</strong>
+          <strong class="stat-num" id="statStudents">—</strong>
           <span class="stat-label">Active enrollments</span>
         </div>
       </div>
@@ -96,38 +106,15 @@
             <button class="ghost-btn" data-goto="calendar">Open calendar →</button>
           </div>
 
-          <ul class="lesson-list">
-            <li class="lesson-row">
-              <span class="stamp" data-tone="live">Lv 6</span>
-              <div class="lesson-info">
-                <strong>English Program P2 · Lesson 0</strong>
-                <span>Sat, Aug 29 · 8:00 – 8:25 PM · Student: Miguel</span>
-              </div>
-              <button class="join-btn">Join classroom</button>
-            </li>
-            <li class="lesson-row">
-              <span class="stamp" data-tone="wait">Lv 3</span>
-              <div class="lesson-info">
-                <strong>English Program P1E · Lesson 4</strong>
-                <span>Sat, Aug 29 · 8:30 – 8:55 PM · Student: Natee (EN)</span>
-              </div>
-              <button class="join-btn join-btn--wait">In 27:43</button>
-            </li>
-            <li class="lesson-row">
-              <span class="stamp" data-tone="wait">Lv 3</span>
-              <div class="lesson-info">
-                <strong>English Program P1E · Lesson 1</strong>
-                <span>Sat, Aug 29 · 9:00 – 9:25 PM · Student: Thann</span>
-              </div>
-              <button class="join-btn join-btn--wait">In 57:43</button>
-            </li>
-          </ul>
+          <!-- Populated by renderLessons() in script.js. Starts empty on purpose. -->
+          <ul class="lesson-list" id="lessonList"></ul>
+          <p class="empty-state" id="lessonEmpty">No lessons published yet — head to Calendar to publish availability.</p>
         </div>
 
-        <div class="panel panel--upload">
+        <div class="panel panel--upload" data-requires="uploadSlides">
           <div class="panel-head">
-            <h2>Admin upload</h2>
-            <span class="tag-pill">Admin only</span>
+            <h2>Lesson upload</h2>
+            <span class="tag-pill">Teacher / Admin</span>
           </div>
           <p class="panel-copy">Drop a slide deck here — it becomes the shared lesson view every student sees in Classroom.</p>
           <label class="dropzone" for="pptInput">
@@ -156,7 +143,8 @@
           <span><i class="dot dot--reserved"></i>Reserved</span>
           <span><i class="dot dot--pending"></i>Scheduling</span>
         </div>
-        <button class="solid-btn">Update calendar</button>
+        <!-- Publishing availability is a teacher/admin action, not a student one -->
+        <button class="solid-btn" data-requires="manageOwnCalendar">Update calendar</button>
       </div>
 
       <div class="cal-scroll">
@@ -176,6 +164,7 @@
           <tbody id="calBody"></tbody>
         </table>
       </div>
+      <p class="empty-state" id="calEmpty">No time slots published yet.</p>
     </section>
 
     <!-- ============ CLASSROOM VIEW ============ -->
@@ -185,22 +174,21 @@
 
         <div class="classroom-stage">
           <div class="stage-toolbar">
-            <div class="room-code">Room <span>1874837275</span></div>
-            <div class="stage-timer">Starts in <strong>00:00:17</strong></div>
-            <button class="start-btn">Start class</button>
+            <div class="room-code">Room <span id="roomCode">—</span></div>
+            <div class="stage-timer">Starts in <strong id="stageTimer">--:--:--</strong></div>
+            <button class="start-btn" data-requires="uploadSlides">Start class</button>
           </div>
 
           <div class="slide-frame">
-            <div class="slide-badge">Level 6 · Trial Lesson</div>
+            <div class="slide-badge" id="slideBadge">No lesson loaded</div>
             <div class="slide-art">
-              <h2>A Festival of Colors</h2>
-              <p>Ask the question: <em>What can you see?</em></p>
-              <p>Read the title, then tell the student they will read an article about a festival.</p>
+              <h2 id="slideTitle">Waiting for a lesson</h2>
+              <p id="slideBody">Once a teacher starts a class or uploads slides, they'll appear here for everyone in the room.</p>
             </div>
-            <div class="slide-controls">
+            <div class="slide-controls" data-requires="uploadSlides">
               <button class="icon-btn">↺</button>
               <button class="icon-btn">‹</button>
-              <span>1 / 37</span>
+              <span id="slideCounter">0 / 0</span>
               <button class="icon-btn">›</button>
               <button class="icon-btn">＋</button>
               <button class="icon-btn">－</button>
@@ -214,7 +202,7 @@
           <div class="video-porthole">
             <div class="video-porthole-ring">
               <div class="video-fill">
-                <span>Teacher · Lei</span>
+                <span id="videoLabel">Waiting to join…</span>
               </div>
             </div>
             <div class="video-tools">
@@ -226,21 +214,16 @@
 
           <div class="roster">
             <h3>In this room</h3>
-            <ul>
-              <li><span class="avatar-dot"></span> Miguel <em>Student</em></li>
-              <li><span class="avatar-dot avatar-dot--away"></span> Lei B. <em>Teacher · Admin</em></li>
-            </ul>
+            <ul id="rosterList"></ul>
+            <p class="empty-state" id="rosterEmpty">No one has joined yet.</p>
           </div>
 
           <div class="chat">
             <h3>Class chat</h3>
-            <div class="chat-log">
-              <p><strong>Lei:</strong> Welcome! Let's begin today's festival story.</p>
-              <p><strong>Miguel:</strong> I can see colors everywhere!</p>
-            </div>
+            <div class="chat-log" id="chatLog"></div>
             <div class="chat-input">
-              <input type="text" placeholder="Send a message…">
-              <button>Send</button>
+              <input type="text" id="chatInput" placeholder="Send a message…">
+              <button id="chatSend">Send</button>
             </div>
           </div>
 
@@ -251,6 +234,13 @@
   </div>
 </div>
 
+<!--
+  Load order matters:
+  1. auth-guard.js — checks the session, fills in the user chip,
+     hides anything tagged data-requires="…" the account can't use.
+  2. script.js — the rest of the app's behavior.
+-->
+<script src="auth-guard.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
