@@ -295,11 +295,50 @@ if (pptInput){
 }
 
 // ============================================================
-// CLASSROOM — mic/camera/filter toggles
+// CLASSROOM — CAMERA PREVIEW
 // ============================================================
-document.querySelectorAll(".pill-toggle").forEach(btn => {
-  btn.addEventListener("click", () => btn.classList.toggle("is-on"));
-});
+const cameraToggle = document.getElementById("cameraToggle");
+const localVideo = document.getElementById("localVideo");
+
+let localStream = null;
+
+if (cameraToggle && localVideo){
+  cameraToggle.addEventListener("click", async () => {
+
+    // CAMERA IS CURRENTLY OFF → TURN IT ON
+    if (!localStream){
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+
+        localVideo.srcObject = localStream;
+        localVideo.style.display = "block";
+        cameraToggle.classList.add("is-on");
+
+        document.getElementById("videoLabel").style.display = "none";
+
+      } catch (err) {
+        console.error("Camera error:", err);
+        alert("Unable to access the camera. Please allow camera permission in your browser.");
+        cameraToggle.classList.remove("is-on");
+      }
+
+      return;
+    }
+
+    // CAMERA IS CURRENTLY ON → TURN IT OFF
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+    localVideo.srcObject = null;
+
+    localVideo.style.display = "none";
+    document.getElementById("videoLabel").style.display = "";
+
+    cameraToggle.classList.remove("is-on");
+  });
+}
 
 // ============================================================
 // CLASSROOM — CHAT (local echo only, no backend wired yet)
