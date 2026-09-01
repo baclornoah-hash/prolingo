@@ -1,15 +1,6 @@
-console.log("=== ProLingo AUTH GUARD START ===");
-
 const role = sessionStorage.getItem("prolingo_role");
-const name = sessionStorage.getItem("prolingo_name");
 
-console.log("ProLingo role:", role);
-console.log("ProLingo name:", name);
-console.log(
-    "ProLingo session keys:",
-    Object.keys(sessionStorage)
-);
-console.log("=== ProLingo AUTH GUARD END ===");
+const name = sessionStorage.getItem("prolingo_name");
 
 console.log("ProLingo role:", role);
 console.log("ProLingo name:", name);
