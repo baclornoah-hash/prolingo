@@ -303,7 +303,7 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
 }
 
 .slide-frame{
-  background: linear-gradient(160deg, var(--violet), #7a4fce);
+  background: linear-gradient(160deg, var(--violet), #AF69EF);
   margin: 0 14px 14px; border-radius: var(--radius-md);
   padding: 26px; color:#fff; position:relative; min-height:320px;
   display:flex; flex-direction:column; justify-content:space-between;
