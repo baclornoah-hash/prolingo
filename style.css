@@ -462,3 +462,25 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   display: block;
   flex: 0 0 20px;
 }
+
+/* Login logo — adjustable */
+.login-brand {
+  --login-logo-size: 18px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.login-brand .login-logo {
+  display: block !important;
+  width: var(--login-logo-size) !important;
+  height: var(--login-logo-size) !important;
+  min-width: var(--login-logo-size) !important;
+  min-height: var(--login-logo-size) !important;
+  max-width: var(--login-logo-size) !important;
+  max-height: var(--login-logo-size) !important;
+  object-fit: contain !important;
+  flex: 0 0 var(--login-logo-size) !important;
+  transform: none !important;
+}
