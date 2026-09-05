@@ -301,7 +301,6 @@ if (pptInput){
 const joinClassBtn = document.getElementById("joinClassBtn");
 const cameraToggle = document.getElementById("cameraToggle");
 const localVideo = document.getElementById("localVideo");
-const videoFill = document.getElementById("videoFill");
 const videoLabel = document.getElementById("videoLabel");
 
 let localStream = null;
@@ -317,29 +316,31 @@ async function startCamera() {
       audio: false
     });
 
-    // Attach the camera stream
     localVideo.srcObject = localStream;
 
-    // Wait until the video has received camera data
-    await new Promise((resolve, reject) => {
-      localVideo.onloadedmetadata = resolve;
-      localVideo.onerror = reject;
+    // Wait until the camera has supplied video dimensions.
+    await new Promise((resolve) => {
+      if (localVideo.readyState >= 1) {
+        resolve();
+      } else {
+        localVideo.onloadedmetadata = resolve;
+      }
     });
 
-    // Start playback explicitly
     await localVideo.play();
 
-    // NOW show the live preview
+    // Show the live preview only after playback starts.
     localVideo.style.display = "block";
-    videoFill.classList.add("camera-active");
     videoLabel.style.display = "none";
 
-    joinClassBtn.textContent = "Camera on";
+    if (joinClassBtn) {
+      joinClassBtn.textContent = "Camera on";
+    }
+
     cameraToggle.classList.add("is-on");
 
   } catch (err) {
     console.error("Camera error:", err);
-
     alert("Unable to start the camera: " + err.message);
   }
 }
@@ -351,28 +352,35 @@ function stopCamera() {
   }
 
   localVideo.srcObject = null;
-  videoFill.classList.remove("camera-active");
+  localVideo.style.display = "none";
+  videoLabel.style.display = "";
 
-  videoLabel.textContent = "Waiting to join…";
-  joinClassBtn.textContent = "Join classroom";
+  if (joinClassBtn) {
+    joinClassBtn.textContent = "Join classroom";
+  }
+
   cameraToggle.classList.remove("is-on");
 }
 
-joinClassBtn.addEventListener("click", async () => {
-  if (localStream) {
-    stopCamera();
-  } else {
-    await startCamera();
-  }
-});
+if (joinClassBtn) {
+  joinClassBtn.addEventListener("click", async () => {
+    if (localStream) {
+      stopCamera();
+    } else {
+      await startCamera();
+    }
+  });
+}
 
-cameraToggle.addEventListener("click", async () => {
-  if (localStream) {
-    stopCamera();
-  } else {
-    await startCamera();
-  }
-});
+if (cameraToggle) {
+  cameraToggle.addEventListener("click", async () => {
+    if (localStream) {
+      stopCamera();
+    } else {
+      await startCamera();
+    }
+  });
+}
 
 // ============================================================
 // CLASSROOM — CHAT (local echo only, no backend wired yet)
