@@ -391,3 +391,20 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
 @media (prefers-reduced-motion: reduce){
   .view{ animation:none; }
 }
+
+/* Live camera preview */
+#localVideo {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.video-fill.camera-active #localVideo {
+  display: block;
+}
+
+.video-fill.camera-active #videoLabel {
+  display: none;
+}
