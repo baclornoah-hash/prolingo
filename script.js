@@ -295,50 +295,70 @@ if (pptInput){
 }
 
 // ============================================================
-// CLASSROOM — CAMERA PREVIEW
+// CLASSROOM — JOIN + LIVE CAMERA
 // ============================================================
+
+const joinClassBtn = document.getElementById("joinClassBtn");
 const cameraToggle = document.getElementById("cameraToggle");
 const localVideo = document.getElementById("localVideo");
+const videoFill = document.getElementById("videoFill");
+const videoLabel = document.getElementById("videoLabel");
 
 let localStream = null;
 
-if (cameraToggle && localVideo){
-  cameraToggle.addEventListener("click", async () => {
-
-    // CAMERA IS CURRENTLY OFF → TURN IT ON
-    if (!localStream){
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false
-        });
-
-        localVideo.srcObject = localStream;
-        localVideo.style.display = "block";
-        cameraToggle.classList.add("is-on");
-
-        document.getElementById("videoLabel").style.display = "none";
-
-      } catch (err) {
-        console.error("Camera error:", err);
-        alert("Unable to access the camera. Please allow camera permission in your browser.");
-        cameraToggle.classList.remove("is-on");
-      }
-
-      return;
+async function startCamera() {
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Camera is not supported.");
     }
 
-    // CAMERA IS CURRENTLY ON → TURN IT OFF
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false
+    });
+
+    localVideo.srcObject = localStream;
+    videoFill.classList.add("camera-active");
+
+    videoLabel.textContent = "You";
+    joinClassBtn.textContent = "Camera on";
+    cameraToggle.classList.add("is-on");
+
+  } catch (err) {
+    console.error("Camera error:", err);
+    alert("Unable to access the camera. Please allow camera permission.");
+  }
+}
+
+function stopCamera() {
+  if (localStream) {
     localStream.getTracks().forEach(track => track.stop());
     localStream = null;
-    localVideo.srcObject = null;
+  }
 
-    localVideo.style.display = "none";
-    document.getElementById("videoLabel").style.display = "";
+  localVideo.srcObject = null;
+  videoFill.classList.remove("camera-active");
 
-    cameraToggle.classList.remove("is-on");
-  });
+  videoLabel.textContent = "Waiting to join…";
+  joinClassBtn.textContent = "Join classroom";
+  cameraToggle.classList.remove("is-on");
 }
+
+joinClassBtn.addEventListener("click", async () => {
+  if (localStream) {
+    stopCamera();
+  } else {
+    await startCamera();
+  }
+});
+
+cameraToggle.addEventListener("click", async () => {
+  if (localStream) {
+    stopCamera();
+  } else {
+    await startCamera();
+  }
+});
 
 // ============================================================
 // CLASSROOM — CHAT (local echo only, no backend wired yet)
