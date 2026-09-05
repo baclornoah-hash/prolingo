@@ -472,15 +472,29 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   gap: 8px;
 }
 
+/* Dashboard logo */
+.rail-brand .prolingo-logo {
+  width: 24px !important;
+  height: 24px !important;
+  max-width: 24px !important;
+  max-height: 24px !important;
+  min-width: 24px;
+  min-height: 24px;
+  object-fit: contain;
+  display: block;
+  flex: 0 0 24px;
+}
+
+/* Login logo */
 .login-brand .login-logo {
-  display: block !important;
-  width: var(--login-logo-size) !important;
-  height: var(--login-logo-size) !important;
-  min-width: var(--login-logo-size) !important;
-  min-height: var(--login-logo-size) !important;
-  max-width: var(--login-logo-size) !important;
-  max-height: var(--login-logo-size) !important;
-  object-fit: contain !important;
-  flex: 0 0 var(--login-logo-size) !important;
+  width: 18px !important;
+  height: 18px !important;
+  max-width: 18px !important;
+  max-height: 18px !important;
+  min-width: 18px;
+  min-height: 18px;
+  object-fit: contain;
+  display: block;
+  flex: 0 0 18px;
   transform: none !important;
 }
