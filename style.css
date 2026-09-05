@@ -408,3 +408,12 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
 .video-fill.camera-active #videoLabel {
   display: none;
 }
+
+/* Fix ProLingo logo size */
+.prolingo-logo {
+  width: 140px !important;
+  height: auto !important;
+  max-width: 100% !important;
+  object-fit: contain;
+  display: block;
+}
