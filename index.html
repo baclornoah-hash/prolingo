@@ -200,19 +200,102 @@
         <div class="classroom-side">
 
           <div class="video-porthole">
-            <div class="video-porthole-ring">
-              <div class="video-fill">
-  <video id="localVideo" autoplay playsinline muted></video>
-  <span id="videoLabel">Waiting to join…</span>
-</div>
-            </div>
-            <div class="video-tools">
-              <button class="pill-toggle is-on">Mic</button>
-              <button class="pill-toggle is-on">Camera</button>
-              <button class="pill-toggle" id="filterToggle">Smooth skin</button>
-            </div>
-          </div>
+  <div class="video-fill" id="videoFill">
+    <span id="videoLabel">Waiting to join…</span>
 
+    <video id="localVideo" autoplay playsinline muted></video>
+
+    <div class="camera-message" id="cameraMessage">
+      Click Join classroom to turn on your camera.
+    </div>
+  </div>
+</div>
+
+<!-- JOIN BUTTON GOES HERE -->
+<button class="solid-btn" id="joinClassBtn">Join classroom</button>
+
+<!-- CAMERA TOOLS GO BELOW -->
+<div class="video-tools">
+  <button class="pill-toggle is-on">Mic</button>
+  <button class="pill-toggle is-on" id="cameraToggle">Camera</button>
+  <button class="pill-toggle" id="filterToggle">Smooth skin</button>
+</div>
+
+          // ============================================================
+// CLASSROOM — JOIN + LIVE CAMERA
+// ============================================================
+
+const joinClassBtn = document.getElementById("joinClassBtn");
+const cameraToggle = document.getElementById("cameraToggle");
+const localVideo = document.getElementById("localVideo");
+const videoFill = document.getElementById("videoFill");
+const videoLabel = document.getElementById("videoLabel");
+const cameraMessage = document.getElementById("cameraMessage");
+
+let localStream = null;
+
+async function startCamera() {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("Camera access is not supported in this browser.");
+    }
+
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false
+    });
+
+    localVideo.srcObject = localStream;
+
+    videoFill.classList.add("camera-active");
+    videoLabel.textContent = "You";
+    joinClassBtn.textContent = "Camera on";
+    cameraToggle.classList.add("is-on");
+
+  } catch (err) {
+    console.error("Camera error:", err);
+
+    cameraMessage.textContent =
+      "Camera permission was denied or the camera is unavailable.";
+
+    videoLabel.textContent = "Camera unavailable";
+    alert("Please allow camera access to join the classroom.");
+  }
+}
+
+function stopCamera() {
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+
+  localVideo.srcObject = null;
+  videoFill.classList.remove("camera-active");
+  videoLabel.textContent = "Waiting to join…";
+  cameraMessage.textContent = "Click Join classroom to turn on your camera.";
+  joinClassBtn.textContent = "Join classroom";
+  cameraToggle.classList.remove("is-on");
+}
+
+if (joinClassBtn) {
+  joinClassBtn.addEventListener("click", async () => {
+    if (localStream) {
+      stopCamera();
+    } else {
+      await startCamera();
+    }
+  });
+}
+
+if (cameraToggle) {
+  cameraToggle.addEventListener("click", () => {
+    if (localStream) {
+      stopCamera();
+    } else {
+      startCamera();
+    }
+  });
+}
           <div class="roster">
             <h3>In this room</h3>
             <ul id="rosterList"></ul>
