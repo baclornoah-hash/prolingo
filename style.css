@@ -66,15 +66,30 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   margin-bottom: 40px;
 }
 
-.rail-brand .prolingo-logo{
-  width:34px;
-  height:34px;
-  max-width:34px;
-  max-height:34px;
-  object-fit:contain;
-  display:block;
-  flex:0 0 34px;
+/* Adjustable ProLingo logo */
+.rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+
+.rail-brand .prolingo-logo {
+  --logo-size: 24px;      /* Change this to 18px, 20px, 28px, etc. */
+  --logo-zoom: 1.8;       /* Increase if the PNG has large transparent padding */
+
+  width: var(--logo-size);
+  height: var(--logo-size);
+  max-width: var(--logo-size);
+  max-height: var(--logo-size);
+
+  object-fit: contain;
+  display: block;
+  flex: 0 0 var(--logo-size);
+
+  transform: scale(var(--logo-zoom));
+  transform-origin: center;
+}
+
 .brand-mark{
   width:34px; height:34px; border-radius:10px;
   background: var(--orange);
