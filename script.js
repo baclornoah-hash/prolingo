@@ -317,16 +317,30 @@ async function startCamera() {
       audio: false
     });
 
+    // Attach the camera stream
     localVideo.srcObject = localStream;
-    videoFill.classList.add("camera-active");
 
-    videoLabel.textContent = "You";
+    // Wait until the video has received camera data
+    await new Promise((resolve, reject) => {
+      localVideo.onloadedmetadata = resolve;
+      localVideo.onerror = reject;
+    });
+
+    // Start playback explicitly
+    await localVideo.play();
+
+    // NOW show the live preview
+    localVideo.style.display = "block";
+    videoFill.classList.add("camera-active");
+    videoLabel.style.display = "none";
+
     joinClassBtn.textContent = "Camera on";
     cameraToggle.classList.add("is-on");
 
   } catch (err) {
     console.error("Camera error:", err);
-    alert("Unable to access the camera. Please allow camera permission.");
+
+    alert("Unable to start the camera: " + err.message);
   }
 }
 
