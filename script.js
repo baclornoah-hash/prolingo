@@ -31,6 +31,7 @@ const db = getFirestore(app);
 // ============================================================
 // VIEW SWITCHING (Dashboard / Calendar / Classroom)
 // ============================================================
+
 const views = {
   dashboard: { title: "Dashboard", subtitle: "Where today's lessons begin." },
   calendar:  { title: "Calendar",  subtitle: "Publish time, manage bookings." },
@@ -41,31 +42,46 @@ const railLinks = document.querySelectorAll(".rail-link");
 const viewTitle = document.getElementById("viewTitle");
 const viewSubtitle = document.getElementById("viewSubtitle");
 
-function showView(name){
-  document.querySelectorAll(".view").forEach(v => v.classList.remove("is-active"));
-  document.getElementById(`view-${name}`).classList.add("is-active");
+function showView(name) {
+  const targetView = document.getElementById(`view-${name}`);
+
+  // Stop safely if the requested view does not exist.
+  if (!targetView || !views[name]) {
+    console.error(`View not found: view-${name}`);
+    return;
+  }
+
+  document.querySelectorAll(".view").forEach(v => {
+    v.classList.remove("is-active");
+  });
+
+  targetView.classList.add("is-active");
 
   railLinks.forEach(link => {
     link.classList.toggle("is-active", link.dataset.view === name);
   });
 
-  viewTitle.textContent = views[name].title;
-  viewSubtitle.textContent = views[name].subtitle;
+  if (viewTitle) {
+    viewTitle.textContent = views[name].title;
+  }
+
+  if (viewSubtitle) {
+    viewSubtitle.textContent = views[name].subtitle;
+  }
 }
 
 railLinks.forEach(link => {
-  link.addEventListener("click", () => showView(link.dataset.view));
+  link.addEventListener("click", () => {
+    showView(link.dataset.view);
+  });
 });
 
 // "Open calendar →" shortcut button on the dashboard panel
 document.querySelectorAll("[data-goto]").forEach(btn => {
-  btn.addEventListener("click", () => showView(btn.dataset.goto));
+  btn.addEventListener("click", () => {
+    showView(btn.dataset.goto);
+  });
 });
-
-// NOTE: there is no role-switching code in this file anymore.
-// Which account you're signed in as — and what you can see or do —
-// is decided once at login and enforced by auth-guard.js. This
-// file only renders data and handles UI interactions.
 
 // ============================================================
 // DASHBOARD STATS
