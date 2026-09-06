@@ -1,8 +1,6 @@
 // ============================================================
-// FIREBASE — same project as login.html
-// This file is loaded as type="module" (see index.html) so it
-// can use real import statements like login.html does.
-// ===========================================================
+// FIREBASE
+// ============================================================
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -16,7 +14,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBGWM-ac-jKpP1qjW7MBEUAI-Tls7tP_Rk",
+  apiKey: "AIzaSyBGWM-acjKpP1qjW7MBEUAI-Tls7tP_Rk",
   authDomain: "prolingo-2de9d.firebaseapp.com",
   projectId: "prolingo-2de9d",
   storageBucket: "prolingo-2de9d.firebasestorage.app",
@@ -29,87 +27,116 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // ============================================================
-// VIEW SWITCHING (Dashboard / Calendar / Classroom)
+// HELPERS
+// ============================================================
+
+const $ = (id) => document.getElementById(id);
+
+function setText(id, value) {
+  const element = $(id);
+  if (element) element.textContent = value;
+}
+
+function showElement(id, visible) {
+  const element = $(id);
+  if (element) element.style.display = visible ? "" : "none";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+// ============================================================
+// VIEW SWITCHING
 // ============================================================
 
 const views = {
-  dashboard: { title: "Dashboard", subtitle: "Where today's lessons begin." },
-  calendar:  { title: "Calendar",  subtitle: "Publish time, manage bookings." },
-  classroom: { title: "Classroom", subtitle: "Live lesson in progress." }
+  dashboard: {
+    title: "Dashboard",
+    subtitle: "Where today's lessons begin."
+  },
+  calendar: {
+    title: "Calendar",
+    subtitle: "Publish time, manage bookings."
+  },
+  classroom: {
+    title: "Classroom",
+    subtitle: "Live lesson in progress."
+  }
 };
 
 const railLinks = document.querySelectorAll(".rail-link");
-const viewTitle = document.getElementById("viewTitle");
-const viewSubtitle = document.getElementById("viewSubtitle");
+const viewTitle = $("viewTitle");
+const viewSubtitle = $("viewSubtitle");
 
 function showView(name) {
-  const targetView = document.getElementById(`view-${name}`);
+  const targetView = $(`view-${name}`);
 
-  // Stop safely if the requested view does not exist.
   if (!targetView || !views[name]) {
     console.error(`View not found: view-${name}`);
     return;
   }
 
-  document.querySelectorAll(".view").forEach(v => {
-    v.classList.remove("is-active");
+  document.querySelectorAll(".view").forEach((view) => {
+    view.classList.remove("is-active");
   });
 
   targetView.classList.add("is-active");
 
-  railLinks.forEach(link => {
+  railLinks.forEach((link) => {
     link.classList.toggle("is-active", link.dataset.view === name);
   });
 
-  if (viewTitle) {
-    viewTitle.textContent = views[name].title;
-  }
-
-  if (viewSubtitle) {
-    viewSubtitle.textContent = views[name].subtitle;
-  }
+  if (viewTitle) viewTitle.textContent = views[name].title;
+  if (viewSubtitle) viewSubtitle.textContent = views[name].subtitle;
 }
 
-railLinks.forEach(link => {
+railLinks.forEach((link) => {
   link.addEventListener("click", () => {
     showView(link.dataset.view);
   });
 });
 
-// "Open calendar →" shortcut button on the dashboard panel
-document.querySelectorAll("[data-goto]").forEach(btn => {
-  btn.addEventListener("click", () => {
-    showView(btn.dataset.goto);
+document.querySelectorAll("[data-goto]").forEach((button) => {
+  button.addEventListener("click", () => {
+    showView(button.dataset.goto);
   });
 });
 
 // ============================================================
 // DASHBOARD STATS
-// Starts at "—" (see index.html). Call renderStats() with real
-// numbers once you have a Firestore query wired up, e.g.:
-//
-//   const snap = await getDocs(collection(db, "lessons"));
-//   renderStats({ today: ..., nextLabel: ..., week: ..., students: ... });
 // ============================================================
-function renderStats({ today, nextIn, nextLabel, week, students }){
-  document.getElementById("statToday").textContent = today ?? "—";
-  document.getElementById("statNext").textContent = nextIn ?? "—";
-  document.getElementById("statNextLabel").textContent = nextLabel ?? "Nothing scheduled yet";
-  document.getElementById("statWeek").textContent = week ?? "—";
-  document.getElementById("statStudents").textContent = students ?? "—";
+
+function renderStats({ today, nextIn, nextLabel, week, students }) {
+  setText("statToday", today ?? "—");
+  setText("statNext", nextIn ?? "—");
+  setText("statNextLabel", nextLabel ?? "Nothing scheduled yet");
+  setText("statWeek", week ?? "—");
+  setText("statStudents", students ?? "—");
 }
 
-// Called automatically every time the live lessons data changes —
-// see the bottom of the onSnapshot listener below.
-function updateStatsFromBookings(){
-  const todaysCount = bookings.filter(b => b.day === TODAY_COLUMN).length;
-  const uniqueStudents = new Set(
-    bookings.map(b => b.label).filter(l => l && l !== "Open slot")
+function updateStatsFromBookings() {
+  const todaysBookings = bookings.filter(
+    (booking) => booking.date === getDateKey(currentWeekStart)
   );
+
+  const uniqueStudents = new Set(
+    bookings
+      .map((booking) => booking.studentName)
+      .filter((name) => name && name !== "Open slot")
+  );
+
   renderStats({
-    today: todaysCount || "—",
-    nextIn: todaysCount ? "Today" : "—",
-    nextLabel: todaysCount ? `${todaysCount} lesson${todaysCount === 1 ? "" : "s"} today` : "Nothing scheduled yet",
+    today: todaysBookings.length || "—",
+    nextIn: todaysBookings.length ? "Today" : "—",
+    nextLabel: todaysBookings.length
+      ? `${todaysBookings.length} lesson${todaysBookings.length === 1 ? "" : "s"} today`
+      : "Nothing scheduled yet",
     week: bookings.length || "—",
     students: uniqueStudents.size || "—"
   });
@@ -117,168 +144,328 @@ function updateStatsFromBookings(){
 
 // ============================================================
 // DASHBOARD — UP NEXT LESSON LIST
-// Populated live from Firestore (see LESSONS LIVE SYNC below).
-// Shape stored in lesson objects: { level, title, when, student, status: "live" | "wait" }
 // ============================================================
+
 let lessons = [];
 
-function renderLessons(){
-  const list = document.getElementById("lessonList");
-  const empty = document.getElementById("lessonEmpty");
-  list.innerHTML = "";
+function renderLessons() {
+  const list = $("lessonList");
+  const empty = $("lessonEmpty");
 
-  if (lessons.length === 0){
-    empty.style.display = "block";
+  if (!list) return;
+
+  list.replaceChildren();
+
+  if (lessons.length === 0) {
+    showElement("lessonEmpty", true);
     return;
   }
-  empty.style.display = "none";
 
-  lessons.forEach(lesson => {
+  showElement("lessonEmpty", false);
+
+  lessons.forEach((lesson) => {
     const li = document.createElement("li");
     li.className = "lesson-row";
-    li.innerHTML = `
-      <span class="stamp" data-tone="${lesson.status}">${lesson.level}</span>
-      <div class="lesson-info">
-        <strong>${lesson.title}</strong>
-        <span>${lesson.when} · Student: ${lesson.student}</span>
-      </div>
-      <button class="join-btn ${lesson.status === "wait" ? "join-btn--wait" : ""}">
-        ${lesson.status === "wait" ? "Scheduled" : "Join classroom"}
-      </button>
-    `;
-    if (lesson.status !== "wait"){
-      li.querySelector(".join-btn").addEventListener("click", () => showView("classroom"));
+
+    const stamp = document.createElement("span");
+    stamp.className = "stamp";
+    stamp.dataset.tone = lesson.status;
+    stamp.textContent = lesson.level;
+
+    const info = document.createElement("div");
+    info.className = "lesson-info";
+
+    const title = document.createElement("strong");
+    title.textContent = lesson.title;
+
+    const details = document.createElement("span");
+    details.textContent = `${lesson.when} · Student: ${lesson.student}`;
+
+    info.append(title, details);
+
+    const button = document.createElement("button");
+    button.className = "join-btn";
+
+    if (lesson.status === "wait") {
+      button.classList.add("join-btn--wait");
+      button.textContent = "Scheduled";
+      button.disabled = true;
+    } else {
+      button.textContent = "Join classroom";
+      button.addEventListener("click", () => {
+        showView("classroom");
+      });
     }
+
+    li.append(stamp, info, button);
     list.appendChild(li);
   });
 }
 
-renderLessons();
-
 // ============================================================
-// CALENDAR GRID
-// "days" is still a fixed demo week (real date navigation is a
-// later step) — but the SLOTS shown now come from live Firestore
-// data instead of a hardcoded array.
+// CALENDAR
 // ============================================================
-const days = ["Mon Aug 24","Tue Aug 25","Wed Aug 26","Thu Aug 27","Fri Aug 28","Today Aug 29","Sun Aug 30"];
-const TODAY_COLUMN = 5; // index of "Today" in the days array above
 
 const timeSlots = [
-  "06:00","06:30","07:00","07:30","08:00","08:30","09:00",
-  "09:30","10:00","10:30","11:00","11:30","12:00"
+  "06:00", "06:30", "07:00", "07:30",
+  "08:00", "08:30", "09:00", "09:30",
+  "10:00", "10:30", "11:00", "11:30", "12:00"
 ];
 
-let bookings = []; // filled live from Firestore — see LESSONS LIVE SYNC
+let currentWeekStart = getMonday(new Date());
+let bookings = [];
 
-function buildCalendar(){
-  const tbody = document.getElementById("calBody");
-  const empty = document.getElementById("calEmpty");
-  tbody.innerHTML = "";
+function getMonday(date) {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+
+  const day = result.getDay();
+  const difference = day === 0 ? -6 : 1 - day;
+
+  result.setDate(result.getDate() + difference);
+  return result;
+}
+
+function getDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getWeekDays() {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(currentWeekStart);
+    date.setDate(date.getDate() + index);
+    return date;
+  });
+}
+
+function formatDay(date) {
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function formatRange() {
+  const days = getWeekDays();
+  const first = days[0];
+  const last = days[6];
+
+  const firstText = first.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric"
+  });
+
+  const lastText = last.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
+
+  return `${firstText} – ${lastText}`;
+}
+
+function updateCalendarHeader() {
+  setText("calRange", formatRange());
+
+  const days = getWeekDays();
+
+  document.querySelectorAll("[data-calendar-day]").forEach((element, index) => {
+    if (days[index]) {
+      element.textContent = formatDay(days[index]);
+    }
+  });
+}
+
+function buildCalendar() {
+  const tbody = $("calBody");
+  const empty = $("calEmpty");
+
+  if (!tbody) return;
+
+  tbody.replaceChildren();
+
+  const weekDays = getWeekDays();
 
   timeSlots.forEach((time, rowIndex) => {
     const tr = document.createElement("tr");
 
     const timeTd = document.createElement("td");
     timeTd.className = "time-cell";
-    const end = timeSlots[rowIndex+1] || "12:30";
+
+    const end = timeSlots[rowIndex + 1] || "12:30";
     timeTd.textContent = `${time}–${end}`;
+
     tr.appendChild(timeTd);
 
-    days.forEach((day, colIndex) => {
+    weekDays.forEach((date) => {
       const td = document.createElement("td");
-      const match = bookings.find(b => b.day === colIndex && b.slot === rowIndex);
-      if (match){
+      const dateKey = getDateKey(date);
+
+      const matches = bookings.filter(
+        (booking) =>
+          booking.date === dateKey &&
+          booking.slot === rowIndex
+      );
+
+      matches.forEach((match) => {
         const slot = document.createElement("div");
         slot.className = `slot slot--${match.type}`;
         slot.textContent = match.label;
         td.appendChild(slot);
-      }
+      });
+
       tr.appendChild(td);
     });
 
     tbody.appendChild(tr);
   });
 
-  empty.style.display = bookings.length === 0 ? "block" : "none";
+  showElement("calEmpty", bookings.length === 0);
+  updateCalendarHeader();
 }
 
-buildCalendar();
-
-// Prev/Next just gives lightweight feedback in this static prototype —
-// real week-switching (loading a different date range from Firestore)
-// is a later step.
-document.getElementById("calPrev").addEventListener("click", () => {
-  document.getElementById("calRange").textContent = "Aug 17 – Aug 23";
-});
-document.getElementById("calNext").addEventListener("click", () => {
-  document.getElementById("calRange").textContent = "Aug 31 – Sep 6";
-});
-
-// ============================================================
-// LESSONS LIVE SYNC
-// Listens to the "lessons" collection in real time. Anyone signed
-// in can read it (per firestore.rules); only admin/teacher can
-// write to it. Every change anyone makes updates everyone's screen
-// automatically — no page refresh needed.
-// ============================================================
-onSnapshot(query(collection(db, "lessons"), orderBy("slot")), (snapshot) => {
-  bookings = [];
-  lessons = [];
-
-  snapshot.forEach(docSnap => {
-    const data = docSnap.data();
-
-    // Feed the calendar grid
-    bookings.push({
-      day: data.day,
-      slot: data.slot,
-      type: data.type || "booked",
-      label: data.label || data.studentName || "Booked"
-    });
-
-    // Feed the dashboard "Up next" list — only show today's lessons there
-    if (data.day === TODAY_COLUMN){
-      lessons.push({
-        level: data.level || "—",
-        title: data.title || "Untitled lesson",
-        when: `${days[data.day]} · ${timeSlots[data.slot] || ""}`,
-        student: data.studentName || "—",
-        status: data.status === "live" ? "live" : "wait"
-      });
-    }
-  });
-
+$("calPrev")?.addEventListener("click", () => {
+  currentWeekStart.setDate(currentWeekStart.getDate() - 7);
   buildCalendar();
-  renderLessons();
+  updateStatsFromBookings();
+});
+
+$("calNext")?.addEventListener("click", () => {
+  currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  buildCalendar();
   updateStatsFromBookings();
 });
 
 // ============================================================
-// ADMIN / TEACHER — ADD A LESSON SLOT
-// Simple prompt-based flow for now (fast to use from a phone/
-// tablet). This writes directly to Firestore's "lessons"
-// collection — every signed-in user's calendar updates instantly.
+// LESSONS LIVE SYNC
 // ============================================================
-const updateCalendarBtn = document.querySelector(".solid-btn[data-requires='manageOwnCalendar']");
 
-if (updateCalendarBtn){
+let lessonsListenerStarted = false;
+
+function startLessonsListener() {
+  if (lessonsListenerStarted) return;
+  lessonsListenerStarted = true;
+
+  const lessonsQuery = query(
+    collection(db, "lessons"),
+    orderBy("slot")
+  );
+
+  onSnapshot(
+    lessonsQuery,
+    (snapshot) => {
+      bookings = [];
+      lessons = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        const bookingDate =
+          data.date ||
+          (typeof data.day === "string" ? data.day : null);
+
+        const booking = {
+          id: docSnap.id,
+          date: bookingDate,
+          day: data.day,
+          slot: Number(data.slot),
+          type: data.type || "booked",
+          label: data.label || data.studentName || "Booked",
+          studentName: data.studentName || data.label || "—"
+        };
+
+        bookings.push(booking);
+
+        if (bookingDate === getDateKey(currentWeekStart)) {
+          lessons.push({
+            level: data.level || "—",
+            title: data.title || "Untitled lesson",
+            when: `${formatDay(currentWeekStart)} · ${timeSlots[booking.slot] || ""}`,
+            student: data.studentName || "—",
+            status: data.status === "live" ? "live" : "wait"
+          });
+        }
+      });
+
+      buildCalendar();
+      renderLessons();
+      updateStatsFromBookings();
+    },
+    (error) => {
+      console.error("Lessons listener error:", error);
+      setText("calEmpty", "Unable to load lessons.");
+      setText("lessonEmpty", "Unable to load lessons.");
+    }
+  );
+}
+
+startLessonsListener();
+
+// ============================================================
+// ADMIN / TEACHER — ADD A LESSON SLOT
+// ============================================================
+
+const updateCalendarBtn = document.querySelector(
+  ".solid-btn[data-requires='manageOwnCalendar']"
+);
+
+if (updateCalendarBtn) {
   updateCalendarBtn.addEventListener("click", async () => {
-    const dayInput = prompt("Which day? Enter a number:\n0=Mon 1=Tue 2=Wed 3=Thu 4=Fri 5=Today 6=Sun");
+    const dayInput = prompt(
+      "Which day? Enter a number:\n0=Mon 1=Tue 2=Wed 3=Thu 4=Fri 5=Sat 6=Sun"
+    );
+
     if (dayInput === null) return;
 
-    const timeLabel = timeSlots.map((t, i) => `${i}: ${t}`).join("\n");
-    const slotInput = prompt(`Which time slot? Enter the number:\n${timeLabel}`);
+    const day = Number(dayInput);
+
+    if (!Number.isInteger(day) || day < 0 || day > 6) {
+      alert("Please enter a valid day from 0 to 6.");
+      return;
+    }
+
+    const timeLabel = timeSlots
+      .map((time, index) => `${index}: ${time}`)
+      .join("\n");
+
+    const slotInput = prompt(
+      `Which time slot? Enter the number:\n${timeLabel}`
+    );
+
     if (slotInput === null) return;
 
-    const studentName = prompt("Student name (or leave blank for an open slot):") || "Open slot";
-    const title = prompt("Lesson title (e.g. English Program P2 · Lesson 0):") || "Untitled lesson";
-    const level = prompt("Level label (e.g. Lv 6):") || "—";
+    const slot = Number(slotInput);
+
+    if (!Number.isInteger(slot) || slot < 0 || slot >= timeSlots.length) {
+      alert("Please enter a valid time slot.");
+      return;
+    }
+
+    const selectedDate = new Date(currentWeekStart);
+    selectedDate.setDate(selectedDate.getDate() + day);
+
+    const studentName =
+      prompt("Student name (or leave blank for an open slot):") ||
+      "Open slot";
+
+    const title =
+      prompt("Lesson title (e.g. English Program P2 · Lesson 0):") ||
+      "Untitled lesson";
+
+    const level =
+      prompt("Level label (e.g. Lv 6):") ||
+      "—";
 
     try {
       await addDoc(collection(db, "lessons"), {
-        day: Number(dayInput),
-        slot: Number(slotInput),
+        date: getDateKey(selectedDate),
+        day,
+        slot,
         type: "booked",
         label: studentName,
         studentName,
@@ -287,24 +474,11 @@ if (updateCalendarBtn){
         status: "wait",
         createdAt: Date.now()
       });
-    } catch (err) {
-      alert("Couldn't save that lesson: " + err.message);
-    }
-  });
-}
 
-// ============================================================
-// ADMIN / TEACHER UPLOAD — shows the chosen filename
-// (no server wired yet — connect to Firebase Storage or your
-// own upload endpoint to actually persist the file)
-// ============================================================
-const pptInput = document.getElementById("pptInput");
-const dropzoneFile = document.getElementById("dropzoneFile");
-
-if (pptInput){
-  pptInput.addEventListener("change", () => {
-    if (pptInput.files.length){
-      dropzoneFile.textContent = `Selected: ${pptInput.files[0].name}`;
+      alert("Lesson saved successfully.");
+    } catch (error) {
+      console.error("Unable to save lesson:", error);
+      alert("Couldn't save that lesson: " + error.message);
     }
   });
 }
@@ -313,10 +487,10 @@ if (pptInput){
 // CLASSROOM — JOIN + LIVE CAMERA
 // ============================================================
 
-const joinClassBtn = document.getElementById("joinClassBtn");
-const cameraToggle = document.getElementById("cameraToggle");
-const localVideo = document.getElementById("localVideo");
-const videoLabel = document.getElementById("videoLabel");
+const joinClassBtn = $("joinClassBtn");
+const cameraToggle = $("cameraToggle");
+const localVideo = $("localVideo");
+const videoLabel = $("videoLabel");
 
 let localStream = null;
 let audioContext = null;
@@ -325,16 +499,18 @@ let waveformAnimation = null;
 let micSource = null;
 
 function startMicVisualizer(stream) {
-  const canvas = document.getElementById("micWaveform");
+  const canvas = $("micWaveform");
 
-  if (!canvas) {
-    console.warn("Mic waveform canvas not found.");
-    return;
-  }
+  if (!canvas) return;
 
   stopMicVisualizer();
 
-  audioContext = new AudioContext();
+  const AudioContextClass =
+    window.AudioContext || window.webkitAudioContext;
+
+  if (!AudioContextClass) return;
+
+  audioContext = new AudioContextClass();
   analyser = audioContext.createAnalyser();
 
   analyser.fftSize = 2048;
@@ -347,7 +523,7 @@ function startMicVisualizer(stream) {
 }
 
 function drawMicWaveform() {
-  const canvas = document.getElementById("micWaveform");
+  const canvas = $("micWaveform");
 
   if (!canvas || !analyser) return;
 
@@ -356,6 +532,8 @@ function drawMicWaveform() {
   const dataArray = new Uint8Array(bufferLength);
 
   function draw() {
+    if (!analyser) return;
+
     waveformAnimation = requestAnimationFrame(draw);
 
     analyser.getByteTimeDomainData(dataArray);
@@ -377,7 +555,6 @@ function drawMicWaveform() {
 
     ctx.clearRect(0, 0, width, height);
 
-    // Center guide line
     ctx.beginPath();
     ctx.strokeStyle = "rgba(91, 58, 166, 0.15)";
     ctx.lineWidth = 1;
@@ -385,7 +562,6 @@ function drawMicWaveform() {
     ctx.lineTo(width, height / 2);
     ctx.stroke();
 
-    // Live waveform
     ctx.beginPath();
     ctx.strokeStyle = "#5b3aa6";
     ctx.lineWidth = 2;
@@ -426,7 +602,7 @@ function stopMicVisualizer() {
   analyser = null;
   micSource = null;
 
-  const canvas = document.getElementById("micWaveform");
+  const canvas = $("micWaveform");
 
   if (canvas) {
     const ctx = canvas.getContext("2d");
@@ -435,6 +611,11 @@ function stopMicVisualizer() {
 }
 
 async function startCamera() {
+  if (!localVideo) {
+    alert("Camera preview is unavailable.");
+    return;
+  }
+
   try {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("Camera is not supported.");
@@ -449,7 +630,6 @@ async function startCamera() {
 
     startMicVisualizer(localStream);
 
-    // Wait until the camera has supplied video dimensions.
     await new Promise((resolve) => {
       if (localVideo.readyState >= 1) {
         resolve();
@@ -460,54 +640,60 @@ async function startCamera() {
 
     await localVideo.play();
 
-    // Show the live preview only after playback starts.
     localVideo.style.display = "block";
-    videoLabel.style.display = "none";
+    showElement("videoLabel", false);
 
     if (joinClassBtn) {
       joinClassBtn.textContent = "Camera on";
     }
 
-    cameraToggle.classList.add("is-on");
+    cameraToggle?.classList.add("is-on");
+  } catch (error) {
+    console.error("Camera error:", error);
 
-  } catch (err) {
-    console.error("Camera error:", err);
-    alert("Unable to start the camera: " + err.message);
+    if (localStream) {
+      localStream.getTracks().forEach((track) => track.stop());
+      localStream = null;
+    }
+
+    alert("Unable to start the camera: " + error.message);
   }
 }
 
 function stopCamera() {
   stopMicVisualizer();
+
   if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
+    localStream.getTracks().forEach((track) => track.stop());
     localStream = null;
   }
 
-  localVideo.srcObject = null;
-  localVideo.style.display = "none";
-  videoLabel.style.display = "";
+  if (localVideo) {
+    localVideo.srcObject = null;
+    localVideo.style.display = "none";
+  }
+
+  showElement("videoLabel", true);
 
   if (joinClassBtn) {
     joinClassBtn.textContent = "Join classroom";
   }
 
-  cameraToggle.classList.remove("is-on");
+  cameraToggle?.classList.remove("is-on");
 }
 
 // ============================================================
 // CLASSROOM — MICROPHONE TOGGLE
 // ============================================================
 
-const micToggle = document.getElementById("micToggle");
+const micToggle = $("micToggle");
 
 function setMicrophoneEnabled(enabled) {
-  // Require the user to join the classroom first.
   if (!localStream) {
     alert("Join the classroom first.");
     return;
   }
 
-  // Use the audio track from the existing camera stream.
   const audioTrack = localStream.getAudioTracks()[0];
 
   if (!audioTrack) {
@@ -515,10 +701,8 @@ function setMicrophoneEnabled(enabled) {
     return;
   }
 
-  // Turn the microphone on or off.
   audioTrack.enabled = enabled;
 
-  // Update the button's appearance and label.
   if (micToggle) {
     micToggle.classList.toggle("is-on", enabled);
     micToggle.textContent = enabled ? "Mic on" : "Mic off";
@@ -539,7 +723,6 @@ if (micToggle) {
       return;
     }
 
-    // Reverse the current state.
     setMicrophoneEnabled(!audioTrack.enabled);
   });
 }
@@ -565,56 +748,112 @@ if (cameraToggle) {
 }
 
 // ============================================================
-// CLASSROOM — CHAT (local echo only, no backend wired yet)
+// CLASSROOM — CHAT
 // ============================================================
-const chatLog = document.getElementById("chatLog");
-const chatInput = document.getElementById("chatInput");
-const chatSend = document.getElementById("chatSend");
 
-function addChatMessage(author, text){
+const chatLog = $("chatLog");
+const chatInput = $("chatInput");
+const chatSend = $("chatSend");
+
+function addChatMessage(author, text) {
+  if (!chatLog) return;
+
   const p = document.createElement("p");
-  p.innerHTML = `<strong>${author}:</strong> ${text}`;
+
+  const strong = document.createElement("strong");
+  strong.textContent = `${author}: `;
+
+  p.append(strong, document.createTextNode(text));
   chatLog.appendChild(p);
+
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-if (chatSend){
+if (chatSend) {
   chatSend.addEventListener("click", () => {
-    const text = chatInput.value.trim();
+    const text = chatInput?.value.trim();
+
     if (!text) return;
+
     addChatMessage("You", text);
+
     chatInput.value = "";
+  });
+}
+
+if (chatInput) {
+  chatInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      chatSend?.click();
+    }
   });
 }
 
 // ============================================================
 // CLASSROOM — ROOM STATE
-// Replace this stub with a real join/room lookup once a backend
-// exists (e.g. reading the lesson doc for the room the user tapped
-// "Join classroom" on).
 // ============================================================
-function loadRoom(room){
-  document.getElementById("roomCode").textContent = room?.code ?? "—";
-  document.getElementById("slideBadge").textContent = room?.levelLabel ?? "No lesson loaded";
-  document.getElementById("slideTitle").textContent = room?.title ?? "Waiting for a lesson";
-  document.getElementById("slideBody").textContent = room?.body ??
-    "Once a teacher starts a class or uploads slides, they'll appear here for everyone in the room.";
-  document.getElementById("videoLabel").textContent = room?.teacherName
-    ? `Teacher · ${room.teacherName}` : "Waiting to join…";
 
-  const rosterList = document.getElementById("rosterList");
-  const rosterEmpty = document.getElementById("rosterEmpty");
-  rosterList.innerHTML = "";
-  if (room?.roster?.length){
-    rosterEmpty.style.display = "none";
-    room.roster.forEach(person => {
+function loadRoom(room) {
+  setText("roomCode", room?.code ?? "—");
+  setText("slideBadge", room?.levelLabel ?? "No lesson loaded");
+  setText("slideTitle", room?.title ?? "Waiting for a lesson");
+  setText(
+    "slideBody",
+    room?.body ??
+      "Once a teacher starts a class or uploads slides, they'll appear here for everyone in the room."
+  );
+
+  setText(
+    "videoLabel",
+    room?.teacherName
+      ? `Teacher · ${room.teacherName}`
+      : "Waiting to join…"
+  );
+
+  const rosterList = $("rosterList");
+  const rosterEmpty = $("rosterEmpty");
+
+  if (!rosterList) return;
+
+  rosterList.replaceChildren();
+
+  if (room?.roster?.length) {
+    showElement("rosterEmpty", false);
+
+    room.roster.forEach((person) => {
       const li = document.createElement("li");
-      li.innerHTML = `<span class="avatar-dot ${person.away ? "avatar-dot--away" : ""}"></span> ${person.name} <em>${person.role}</em>`;
+
+      const avatar = document.createElement("span");
+      avatar.className = "avatar-dot";
+
+      if (person.away) {
+        avatar.classList.add("avatar-dot--away");
+      }
+
+      const name = document.createTextNode(` ${person.name} `);
+
+      const role = document.createElement("em");
+      role.textContent = person.role;
+
+      li.append(avatar, name, role);
       rosterList.appendChild(li);
     });
   } else {
-    rosterEmpty.style.display = "block";
+    showElement("rosterEmpty", true);
   }
 }
 
-loadRoom(null); // no room joined yet — this is the honest starting state
+loadRoom(null);
+
+// ============================================================
+// AUTH STATE
+// ============================================================
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    console.log("Signed in:", user.uid);
+  } else {
+    console.log("No signed-in user.");
+  }
+});
