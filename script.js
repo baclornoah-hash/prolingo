@@ -277,8 +277,6 @@ if (updateCalendarBtn){
   });
 }
 
-
-
 // ============================================================
 // ADMIN / TEACHER UPLOAD — shows the chosen filename
 // (no server wired yet — connect to Firebase Storage or your
@@ -604,24 +602,3 @@ function loadRoom(room){
 }
 
 loadRoom(null); // no room joined yet — this is the honest starting state
-
-
-
-    micStream.getTracks().forEach(track => track.stop());
-    micStream = null;
-  }
-
-  isMicOn = false;
-  micToggle.classList.remove("is-on");
-  micToggle.textContent = "Mic";
-}
-
-if (micToggle) {
-  micToggle.addEventListener("click", async () => {
-    if (isMicOn) {
-      stopMicrophone();
-    } else {
-      await startMicrophone();
-    }
-  });
-}
