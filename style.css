@@ -434,6 +434,21 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   display: none;
 }
 
+.mic-visualizer {
+  width: 100%;
+  height: 70px;
+  margin-top: 12px;
+  border-radius: 12px;
+  background: #f4f7f5;
+  overflow: hidden;
+}
+
+#micWaveform {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* ProLingo logo size */
 .rail-brand .prolingo-logo {
   width: 140px;
