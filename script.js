@@ -2,7 +2,8 @@
 // FIREBASE — same project as login.html
 // This file is loaded as type="module" (see index.html) so it
 // can use real import statements like login.html does.
-// ============================================================
+// ===========================================================
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
@@ -313,7 +314,7 @@ async function startCamera() {
 
     localStream = await navigator.mediaDevices.getUserMedia({
       video: true,
-      audio: false
+      audio: true
     });
 
     localVideo.srcObject = localStream;
