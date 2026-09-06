@@ -437,3 +437,70 @@ function loadRoom(room){
 }
 
 loadRoom(null); // no room joined yet — this is the honest starting state
+
+// ============================================================
+// CLASSROOM — MICROPHONE
+// ============================================================
+
+const micToggle = document.getElementById("micToggle");
+
+let micStream = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let isMicOn = false;
+
+async function startMicrophone() {
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Microphone is not supported.");
+    }
+
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: true
+    });
+
+    mediaRecorder = new MediaRecorder(micStream);
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
+    };
+
+    mediaRecorder.start();
+
+    isMicOn = true;
+    micToggle.classList.add("is-on");
+    micToggle.textContent = "Mic on";
+
+  } catch (err) {
+    console.error("Microphone error:", err);
+    alert("Unable to start the microphone: " + err.message);
+  }
+}
+
+function stopMicrophone() {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    mediaRecorder.stop();
+  }
+
+  if (micStream) {
+    micStream.getTracks().forEach(track => track.stop());
+    micStream = null;
+  }
+
+  isMicOn = false;
+  micToggle.classList.remove("is-on");
+  micToggle.textContent = "Mic";
+}
+
+if (micToggle) {
+  micToggle.addEventListener("click", async () => {
+    if (isMicOn) {
+      stopMicrophone();
+    } else {
+      await startMicrophone();
+    }
+  });
+}
