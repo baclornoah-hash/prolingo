@@ -305,6 +305,120 @@ const localVideo = document.getElementById("localVideo");
 const videoLabel = document.getElementById("videoLabel");
 
 let localStream = null;
+let audioContext = null;
+let analyser = null;
+let waveformAnimation = null;
+let micSource = null;
+
+function startMicVisualizer(stream) {
+  const canvas = document.getElementById("micWaveform");
+
+  if (!canvas) {
+    console.warn("Mic waveform canvas not found.");
+    return;
+  }
+
+  stopMicVisualizer();
+
+  audioContext = new AudioContext();
+  analyser = audioContext.createAnalyser();
+
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.8;
+
+  micSource = audioContext.createMediaStreamSource(stream);
+  micSource.connect(analyser);
+
+  drawMicWaveform();
+}
+
+function drawMicWaveform() {
+  const canvas = document.getElementById("micWaveform");
+
+  if (!canvas || !analyser) return;
+
+  const ctx = canvas.getContext("2d");
+  const bufferLength = analyser.fftSize;
+  const dataArray = new Uint8Array(bufferLength);
+
+  function draw() {
+    waveformAnimation = requestAnimationFrame(draw);
+
+    analyser.getByteTimeDomainData(dataArray);
+
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    if (
+      canvas.width !== rect.width * dpr ||
+      canvas.height !== rect.height * dpr
+    ) {
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    const width = rect.width;
+    const height = rect.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Center guide line
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(91, 58, 166, 0.15)";
+    ctx.lineWidth = 1;
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    ctx.stroke();
+
+    // Live waveform
+    ctx.beginPath();
+    ctx.strokeStyle = "#5b3aa6";
+    ctx.lineWidth = 2;
+
+    const sliceWidth = width / bufferLength;
+    let x = 0;
+
+    for (let i = 0; i < bufferLength; i++) {
+      const v = dataArray[i] / 128;
+      const y = (v * height) / 2;
+
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+
+      x += sliceWidth;
+    }
+
+    ctx.stroke();
+  }
+
+  draw();
+}
+
+function stopMicVisualizer() {
+  if (waveformAnimation) {
+    cancelAnimationFrame(waveformAnimation);
+    waveformAnimation = null;
+  }
+
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
+
+  analyser = null;
+  micSource = null;
+
+  const canvas = document.getElementById("micWaveform");
+
+  if (canvas) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
 
 async function startCamera() {
   try {
@@ -318,6 +432,8 @@ async function startCamera() {
     });
 
     localVideo.srcObject = localStream;
+
+    startMicVisualizer(localStream);
 
     // Wait until the camera has supplied video dimensions.
     await new Promise((resolve) => {
@@ -347,6 +463,7 @@ async function startCamera() {
 }
 
 function stopCamera() {
+  stopMicVisualizer();
   if (localStream) {
     localStream.getTracks().forEach(track => track.stop());
     localStream = null;
@@ -361,6 +478,56 @@ function stopCamera() {
   }
 
   cameraToggle.classList.remove("is-on");
+}
+
+// ============================================================
+// CLASSROOM — MICROPHONE TOGGLE
+// ============================================================
+
+const micToggle = document.getElementById("micToggle");
+
+function setMicrophoneEnabled(enabled) {
+  // Require the user to join the classroom first.
+  if (!localStream) {
+    alert("Join the classroom first.");
+    return;
+  }
+
+  // Use the audio track from the existing camera stream.
+  const audioTrack = localStream.getAudioTracks()[0];
+
+  if (!audioTrack) {
+    alert("No microphone was found.");
+    return;
+  }
+
+  // Turn the microphone on or off.
+  audioTrack.enabled = enabled;
+
+  // Update the button's appearance and label.
+  if (micToggle) {
+    micToggle.classList.toggle("is-on", enabled);
+    micToggle.textContent = enabled ? "Mic on" : "Mic off";
+  }
+}
+
+if (micToggle) {
+  micToggle.addEventListener("click", () => {
+    if (!localStream) {
+      alert("Join the classroom first.");
+      return;
+    }
+
+    const audioTrack = localStream.getAudioTracks()[0];
+
+    if (!audioTrack) {
+      alert("No microphone was found.");
+      return;
+    }
+
+    // Reverse the current state.
+    setMicrophoneEnabled(!audioTrack.enabled);
+  });
 }
 
 if (joinClassBtn) {
@@ -438,54 +605,8 @@ function loadRoom(room){
 
 loadRoom(null); // no room joined yet — this is the honest starting state
 
-// ============================================================
-// CLASSROOM — MICROPHONE
-// ============================================================
 
-const micToggle = document.getElementById("micToggle");
 
-let micStream = null;
-let mediaRecorder = null;
-let audioChunks = [];
-let isMicOn = false;
-
-async function startMicrophone() {
-  try {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error("Microphone is not supported.");
-    }
-
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: true
-    });
-
-    mediaRecorder = new MediaRecorder(micStream);
-    audioChunks = [];
-
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data);
-      }
-    };
-
-    mediaRecorder.start();
-
-    isMicOn = true;
-    micToggle.classList.add("is-on");
-    micToggle.textContent = "Mic on";
-
-  } catch (err) {
-    console.error("Microphone error:", err);
-    alert("Unable to start the microphone: " + err.message);
-  }
-}
-
-function stopMicrophone() {
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    mediaRecorder.stop();
-  }
-
-  if (micStream) {
     micStream.getTracks().forEach(track => track.stop());
     micStream = null;
   }
