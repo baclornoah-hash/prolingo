@@ -704,8 +704,8 @@ function renderTeachers() {
 
   selectedTeacherName = teacher.name || "Teacher";
 
-  showView("calendar");
-  buildCalendar();
+  showView("teacherSchedule");
+buildTeacherSchedule();
 });
 
     content.append(
