@@ -351,10 +351,14 @@ function buildCalendar() {
   );
 
   const visibleAvailability = availability.filter((slot) =>
-    weekDays.some(
-      (date) => getDateKey(date) === slot.date
-    )
-  );
+  weekDays.some(
+    (date) => getDateKey(date) === slot.date
+  ) &&
+  (
+    !selectedTeacherId ||
+    slot.teacherId === selectedTeacherId
+  )
+);
 
   showElement(
     "calEmpty",
