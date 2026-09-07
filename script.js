@@ -11,10 +11,7 @@ import {
 import {
   collection,
   addDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  where
+  onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ============================================================
@@ -400,8 +397,6 @@ function startLessonsListener() {
   );
 }
 
-startLessonsListener();
-
 // ============================================================
 // TEACHERS — LOAD TEACHER PROFILES
 // ============================================================
@@ -530,8 +525,6 @@ function startTeachersListener() {
     }
   );
 }
-
-startTeachersListener();
 
 // ============================================================
 // ADMIN / TEACHER — ADD A LESSON SLOT
@@ -1015,16 +1008,20 @@ loadRoom(null);
 // ============================================================
 
 let currentUser = null;
+let authReady = false;
 
 onAuthStateChanged(auth, (user) => {
   currentUser = user;
+  authReady = true;
 
   if (user) {
     console.log("Signed in:", user.uid);
-    console.log(
-      "Role:",
-      sessionStorage.getItem("prolingo_role")
-    );
+
+    const role = sessionStorage.getItem("prolingo_role");
+    console.log("Role:", role);
+
+    startLessonsListener();
+    startTeachersListener();
   } else {
     console.log("No signed-in user.");
   }
