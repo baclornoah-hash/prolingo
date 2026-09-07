@@ -565,7 +565,7 @@ function renderTeachers() {
     button.textContent = "View availability";
 
     button.addEventListener("click", () => {
-  selectedTeacherId = teacher.id;
+  selectedTeacherId = teacher.authUid || teacher.id;
   selectedTeacherName = teacher.name || "Teacher";
 
   showView("calendar");
