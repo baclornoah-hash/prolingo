@@ -568,6 +568,9 @@ function renderTeachers() {
   selectedTeacherId = teacher.authUid || teacher.id;
   selectedTeacherName = teacher.name || "Teacher";
 
+  console.log("Selected teacher ID:", selectedTeacherId);
+  console.log("Selected teacher:", teacher);
+
   showView("calendar");
   buildCalendar();
 });
