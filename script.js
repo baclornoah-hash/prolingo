@@ -1,5 +1,5 @@
 /// ============================================================
-// FIREBASE
+// FIREBAS
 // ============================================================
 
 import { auth, db } from "./firebase-config.js";
@@ -131,6 +131,7 @@ function updateStatsFromBookings() {
     students: uniqueStudents.size || "—"
   });
 }
+
 
 // ============================================================
 // DASHBOARD — UP NEXT LESSON LIST
@@ -479,8 +480,11 @@ if (updateCalendarBtn) {
 
 const joinClassBtn = $("joinClassBtn");
 const cameraToggle = $("cameraToggle");
+const filterToggle = $("filterToggle");
 const localVideo = $("localVideo");
 const videoLabel = $("videoLabel");
+
+let smoothSkinEnabled = false;
 
 let localStream = null;
 let audioContext = null;
