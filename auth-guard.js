@@ -1,6 +1,8 @@
-import {
-  auth
-} from "./firebase-config.js";
+// ============================================================
+// PROLINGO AUTH GUARD
+// ============================================================
+
+import { auth } from "./firebase-config.js";
 
 import {
   onAuthStateChanged,
@@ -19,9 +21,31 @@ const ALLOWED_ROLES = new Set([
 function redirectToLogin() {
   sessionStorage.removeItem("prolingo_role");
   sessionStorage.removeItem("prolingo_name");
+
   window.location.replace("login.html");
 }
 
+function roleLabel(role) {
+  return {
+    admin: "Admin · Panda English",
+    teacher: "Teacher",
+    student: "Student"
+  }[role] || role;
+}
+
+function initials(name) {
+  if (!name) return "?";
+
+  return name
+    .trim()
+    .split(/\s+/)
+    .map(part => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+// First check the stored session information.
 if (
   !role ||
   !name ||
@@ -29,26 +53,13 @@ if (
 ) {
   redirectToLogin();
 } else {
+
+  // Then verify that the Firebase account is still signed in.
   onAuthStateChanged(auth, (user) => {
     if (!user) {
       redirectToLogin();
     }
   });
-
-  // Keep your existing PERMISSIONS object and DOMContentLoaded code here.
-}
-
-const role = sessionStorage.getItem("prolingo_role");
-
-const name = sessionStorage.getItem("prolingo_name");
-
-console.log("ProLingo role:", role);
-console.log("ProLingo name:", name);
-
-if (!role || role === "undefined" || role === "null") {
-  console.error("No valid ProLingo session found.");
-  window.location.replace("login.html");
-} else {
 
   const PERMISSIONS = {
     admin: {
@@ -76,14 +87,21 @@ if (!role || role === "undefined" || role === "null") {
     }
   };
 
-  const can = (permission) =>
-    !!(PERMISSIONS[role] && PERMISSIONS[role][permission]);
+  const can = (permission) => {
+    return !!(
+      PERMISSIONS[role] &&
+      PERMISSIONS[role][permission]
+    );
+  };
 
   document.addEventListener("DOMContentLoaded", () => {
 
-    document.querySelectorAll("[data-requires]").forEach(el => {
-      const needed = el.dataset.requires;
-      el.style.display = can(needed) ? "" : "none";
+    document.querySelectorAll("[data-requires]").forEach((element) => {
+      const neededPermission = element.dataset.requires;
+
+      element.style.display = can(neededPermission)
+        ? ""
+        : "none";
     });
 
     const userName = document.getElementById("userName");
@@ -91,7 +109,7 @@ if (!role || role === "undefined" || role === "null") {
     const userAvatar = document.querySelector(".user-avatar");
 
     if (userName) {
-      userName.textContent = name || "Signed in";
+      userName.textContent = name;
     }
 
     if (userMeta) {
@@ -105,36 +123,20 @@ if (!role || role === "undefined" || role === "null") {
     const logoutBtn = document.getElementById("logoutBtn");
 
     if (logoutBtn) {
-      logoutBtn.addEventListener("click", () => {
+      logoutBtn.addEventListener("click", async () => {
+        try {
+          await signOut(auth);
+        } catch (error) {
+          console.error("Logout failed:", error);
+        } finally {
+          sessionStorage.removeItem("prolingo_role");
+          sessionStorage.removeItem("prolingo_name");
 
-        sessionStorage.removeItem("prolingo_role");
-        sessionStorage.removeItem("prolingo_name");
-
-        window.location.replace("login.html");
-
+          window.location.replace("login.html");
+        }
       });
     }
 
   });
 
-}
-
-function roleLabel(role) {
-  return {
-    admin: "Admin · Panda English",
-    teacher: "Teacher",
-    student: "Student"
-  }[role] || role;
-}
-
-function initials(name) {
-  if (!name) return "?";
-
-  return name
-    .trim()
-    .split(/\s+/)
-    .map(p => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 }
