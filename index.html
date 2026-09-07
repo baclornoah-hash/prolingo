@@ -220,24 +220,36 @@
           </div>
         </div>
 
-        <div class="video-porthole">
-  <div class="video-porthole-ring">
-    <div class="video-fill" id="videoFill">
-  <video id="localVideo" autoplay playsinline muted></video>
+        <div class="video-classroom">
 
-  <video id="remoteVideo" autoplay playsinline></video>
+  <div class="main-video-area">
+    <video
+      id="remoteVideo"
+      autoplay
+      playsinline
+    ></video>
 
-  <span id="videoLabel">Waiting to join…</span>
-  <span id="remoteVideoLabel">Waiting for another participant…</span>
-</div>
+    <div class="remote-video-placeholder" id="remoteVideoPlaceholder">
+      Waiting for the teacher or another participant…
+    </div>
 
-  <button class="solid-btn" id="joinClassBtn">Join classroom</button>
+    <div class="self-preview">
+      <video
+        id="localVideo"
+        autoplay
+        playsinline
+        muted
+      ></video>
+      <span id="videoLabel">You</span>
+    </div>
+  </div>
 
   <div class="video-tools">
     <button class="pill-toggle is-on" id="micToggle">Mic</button>
     <button class="pill-toggle" id="cameraToggle">Camera</button>
     <button class="pill-toggle" id="filterToggle">Smooth skin</button>
   </div>
+
 </div>
 
         <div class="mic-visualizer">
