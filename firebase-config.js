@@ -9,12 +9,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "REAL_API_KEY_FROM_FIREBASE",
+  apiKey: "AIzaSyBGWM-ac-jKpP1qjW7MBEUAI-Tls7tP_Rk",
   authDomain: "prolingo-2de9d.firebaseapp.com",
   projectId: "prolingo-2de9d",
-  storageBucket: "REAL_STORAGE_BUCKET",
-  messagingSenderId: "REAL_MESSAGING_SENDER_ID",
-  appId: "REAL_APP_ID"
+  storageBucket: "prolingo-2de9d.firebasestorage.app",
+  messagingSenderId: "59292786878",
+  appId: "1:59292786878:web:bd6e737458fdd8d9aabeef",
+  measurementId: "G-EK8Z4S668T"
 };
 
 const app = initializeApp(firebaseConfig);
