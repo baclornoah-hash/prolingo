@@ -13,7 +13,8 @@ import {
   addDoc,
   onSnapshot,
   query,
-  orderBy
+  orderBy,
+  where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ============================================================
@@ -400,6 +401,130 @@ function startLessonsListener() {
 }
 
 startLessonsListener();
+
+// ============================================================
+// TEACHERS — LOAD TEACHER PROFILES
+// ============================================================
+
+let teachers = [];
+let teachersListenerStarted = false;
+
+function renderTeachers() {
+  const teacherGrid = $("teacherGrid");
+  const teacherEmpty = $("teacherEmpty");
+
+  if (!teacherGrid) return;
+
+  teacherGrid.replaceChildren();
+
+  if (teachers.length === 0) {
+    showElement("teacherEmpty", true);
+    return;
+  }
+
+  showElement("teacherEmpty", false);
+
+  teachers.forEach((teacher) => {
+    const card = document.createElement("article");
+    card.className = "teacher-card";
+
+    const photo = document.createElement("img");
+    photo.className = "teacher-photo";
+    photo.src = teacher.photoUrl || "default-teacher.png";
+    photo.alt = `${teacher.name || "Teacher"} profile picture`;
+
+    photo.onerror = () => {
+      photo.src = "default-teacher.png";
+    };
+
+    const content = document.createElement("div");
+    content.className = "teacher-card-content";
+
+    const name = document.createElement("h3");
+    name.textContent = teacher.name || "Unnamed teacher";
+
+    const specialization = document.createElement("p");
+    specialization.className = "teacher-specialization";
+    specialization.textContent =
+      teacher.specialization || "English instruction";
+
+    const bio = document.createElement("p");
+    bio.className = "teacher-bio";
+    bio.textContent =
+      teacher.bio || "No biography has been added yet.";
+
+    const details = document.createElement("div");
+    details.className = "teacher-details";
+
+    const qualifications = document.createElement("span");
+    qualifications.textContent =
+      teacher.qualifications || "Qualifications not listed";
+
+    const teachingStyle = document.createElement("span");
+    teachingStyle.textContent =
+      teacher.teachingStyle || "Teaching style not listed";
+
+    details.append(qualifications, teachingStyle);
+
+    const button = document.createElement("button");
+    button.className = "solid-btn";
+    button.type = "button";
+    button.textContent = "View availability";
+
+    button.addEventListener("click", () => {
+      alert(
+        `Availability for ${teacher.name || "this teacher"} will be added next.`
+      );
+    });
+
+    content.append(
+      name,
+      specialization,
+      bio,
+      details,
+      button
+    );
+
+    card.append(photo, content);
+    teacherGrid.appendChild(card);
+  });
+}
+
+function startTeachersListener() {
+  if (teachersListenerStarted) return;
+  teachersListenerStarted = true;
+
+  const teachersQuery = query(
+    collection(db, "teachers"),
+    where("active", "==", true),
+    orderBy("name")
+  );
+
+  onSnapshot(
+    teachersQuery,
+    (snapshot) => {
+      teachers = [];
+
+      snapshot.forEach((docSnap) => {
+        teachers.push({
+          id: docSnap.id,
+          ...docSnap.data()
+        });
+      });
+
+      renderTeachers();
+    },
+    (error) => {
+      console.error("Teachers listener error:", error);
+      setText(
+        "teacherEmpty",
+        "Unable to load teachers. Check your Firestore rules."
+      );
+    }
+  );
+}
+
+startTeachersListener();
 
 // ============================================================
 // ADMIN / TEACHER — ADD A LESSON SLOT
