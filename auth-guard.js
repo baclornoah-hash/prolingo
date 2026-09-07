@@ -1,16 +1,9 @@
-// ============================================================
-// PROLINGO AUTH GUARD
-// ============================================================
-
 import { auth } from "./firebase-config.js";
 
 import {
   onAuthStateChanged,
   signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
-const role = sessionStorage.getItem("prolingo_role");
-const name = sessionStorage.getItem("prolingo_name");
 
 const ALLOWED_ROLES = new Set([
   "admin",
@@ -22,121 +15,85 @@ function redirectToLogin() {
   sessionStorage.removeItem("prolingo_role");
   sessionStorage.removeItem("prolingo_name");
 
-  window.location.replace("login.html");
+  if (!window.location.pathname.endsWith("/login.html")) {
+    window.location.replace("login.html");
+  }
 }
 
-function roleLabel(role) {
-  return {
-    admin: "Admin · Panda English",
-    teacher: "Teacher",
-    student: "Student"
-  }[role] || role;
-}
+function initializeAuthGuard() {
+  const role = sessionStorage.getItem("prolingo_role");
+  const name = sessionStorage.getItem("prolingo_name");
 
-function initials(name) {
-  if (!name) return "?";
+  console.log("Stored role:", role);
+  console.log("Stored name:", name);
 
-  return name
-    .trim()
-    .split(/\s+/)
-    .map(part => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
+  if (!role || !ALLOWED_ROLES.has(role) || !name) {
+    console.error("Invalid or missing ProLingo session.");
+    redirectToLogin();
+    return;
+  }
 
-// First check the stored session information.
-if (
-  !role ||
-  !name ||
-  !ALLOWED_ROLES.has(role)
-) {
-  redirectToLogin();
-} else {
+  const userNameElement = document.getElementById("userName");
+  const userRoleElement = document.getElementById("userRole");
+  const logoutButton = document.getElementById("logoutBtn");
 
-  // Then verify that the Firebase account is still signed in.
-  onAuthStateChanged(auth, (user) => {
-    if (!user) {
-      redirectToLogin();
+  if (userNameElement) {
+    userNameElement.textContent = name;
+  }
+
+  if (userRoleElement) {
+    userRoleElement.textContent = role;
+  }
+
+  document.querySelectorAll("[data-requires]").forEach((element) => {
+    const requiredRole = element.dataset.requires;
+
+    if (requiredRole !== role) {
+      element.style.display = "none";
     }
   });
 
-  const PERMISSIONS = {
-    admin: {
-      uploadSlides: true,
-      manageOwnCalendar: true,
-      manageCalendarTemplate: true,
-      manageAccounts: true,
-      viewAllClassrooms: true
-    },
+  if (!logoutButton) {
+    console.error("Logout button not found.");
+  } else {
+    logoutButton.addEventListener("click", async () => {
+      console.log("Logout button clicked.");
 
-    teacher: {
-  uploadSlides: false,
-  manageOwnCalendar: true,
-  manageCalendarTemplate: false,
-  manageAccounts: false,
-  viewAllClassrooms: false
-}
-      
-    student: {
-      uploadSlides: false,
-      manageOwnCalendar: false,
-      manageCalendarTemplate: false,
-      manageAccounts: false,
-      viewAllClassrooms: false
-    }
-  };
+      logoutButton.disabled = true;
+      logoutButton.textContent = "Logging out...";
 
-  const can = (permission) => {
-    return !!(
-      PERMISSIONS[role] &&
-      PERMISSIONS[role][permission]
-    );
-  };
+      try {
+        await signOut(auth);
 
-  document.addEventListener("DOMContentLoaded", () => {
+        console.log("Firebase logout successful.");
 
-    document.querySelectorAll("[data-requires]").forEach((element) => {
-      const neededPermission = element.dataset.requires;
+        sessionStorage.removeItem("prolingo_role");
+        sessionStorage.removeItem("prolingo_name");
 
-      element.style.display = can(neededPermission)
-        ? ""
-        : "none";
+        window.location.replace("login.html");
+      } catch (error) {
+        console.error("Firebase logout failed:", error);
+
+        logoutButton.disabled = false;
+        logoutButton.textContent = "Log out";
+
+        alert("Logout failed. Please try again.");
+      }
     });
+  }
+}
 
-    const userName = document.getElementById("userName");
-    const userMeta = document.getElementById("userMeta");
-    const userAvatar = document.querySelector(".user-avatar");
+onAuthStateChanged(auth, (user) => {
+  if (!user) {
+    console.log("No authenticated Firebase user.");
+    redirectToLogin();
+  } else {
+    console.log("Authenticated Firebase user:", user.uid);
+  }
+});
 
-    if (userName) {
-      userName.textContent = name;
-    }
-
-    if (userMeta) {
-      userMeta.textContent = roleLabel(role);
-    }
-
-    if (userAvatar) {
-      userAvatar.textContent = initials(name);
-    }
-
-    const logoutBtn = document.getElementById("logoutBtn");
-
-    if (logoutBtn) {
-      logoutBtn.addEventListener("click", async () => {
-        try {
-          await signOut(auth);
-        } catch (error) {
-          console.error("Logout failed:", error);
-        } finally {
-          sessionStorage.removeItem("prolingo_role");
-          sessionStorage.removeItem("prolingo_name");
-
-          window.location.replace("login.html");
-        }
-      });
-    }
-
-  });
-
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeAuthGuard);
+} else {
+  initializeAuthGuard();
 }
