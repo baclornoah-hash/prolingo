@@ -206,7 +206,13 @@ const timeSlots = [
 ];
 
 let currentWeekStart = getMonday(new Date());
+
 let bookings = [];
+let availability = [];
+let availabilityListenerStarted = false;
+
+let selectedTeacherId = null;
+let selectedTeacherName = "";
 
 function getMonday(date) {
   const result = new Date(date);
@@ -276,7 +282,6 @@ function updateCalendarHeader() {
 
 function buildCalendar() {
   const tbody = $("calBody");
-  const empty = $("calEmpty");
 
   if (!tbody) return;
 
@@ -299,16 +304,37 @@ function buildCalendar() {
       const td = document.createElement("td");
       const dateKey = getDateKey(date);
 
-      const matches = bookings.filter(
+      const bookingMatches = bookings.filter(
         (booking) =>
           booking.date === dateKey &&
           booking.slot === rowIndex
       );
 
-      matches.forEach((match) => {
+      const availabilityMatches = availability.filter(
+        (slot) =>
+          slot.date === dateKey &&
+          slot.slot === rowIndex &&
+          (
+            !selectedTeacherId ||
+            slot.teacherId === selectedTeacherId
+          )
+      );
+
+      bookingMatches.forEach((match) => {
         const slot = document.createElement("div");
-        slot.className = `slot slot--${match.type}`;
-        slot.textContent = match.label;
+
+        slot.className = `slot slot--${match.type || "booked"}`;
+        slot.textContent = match.label || "Booked";
+
+        td.appendChild(slot);
+      });
+
+      availabilityMatches.forEach((match) => {
+        const slot = document.createElement("div");
+
+        slot.className = "slot slot--available";
+        slot.textContent = match.label || "Open";
+
         td.appendChild(slot);
       });
 
@@ -319,10 +345,23 @@ function buildCalendar() {
   });
 
   const visibleBookings = bookings.filter((booking) =>
-  weekDays.some((date) => getDateKey(date) === booking.date)
-);
+    weekDays.some(
+      (date) => getDateKey(date) === booking.date
+    )
+  );
 
-showElement("calEmpty", visibleBookings.length === 0);
+  const visibleAvailability = availability.filter((slot) =>
+    weekDays.some(
+      (date) => getDateKey(date) === slot.date
+    )
+  );
+
+  showElement(
+    "calEmpty",
+    visibleBookings.length === 0 &&
+      visibleAvailability.length === 0
+  );
+
   updateCalendarHeader();
 }
 
@@ -339,6 +378,7 @@ $("calNext")?.addEventListener("click", () => {
 });
 
 // ============================================================
+// ============================================================
 // LESSONS LIVE SYNC
 // ============================================================
 
@@ -346,6 +386,7 @@ let lessonsListenerStarted = false;
 
 function startLessonsListener() {
   if (lessonsListenerStarted) return;
+
   lessonsListenerStarted = true;
 
   onSnapshot(
@@ -362,7 +403,28 @@ function startLessonsListener() {
           (typeof data.day === "string" ? data.day : null);
 
         const booking = {
-          id: dot] || ""
+          id: docSnap.id,
+          teacherId: data.teacherId || null,
+          studentId: data.studentId || null,
+          date: bookingDate,
+          day: data.day,
+          slot: Number(data.slot),
+          type: data.type || "booked",
+          label: data.label || data.studentName || "Booked",
+          studentName: data.studentName || data.label || "—"
+        };
+
+        bookings.push(booking);
+
+        if (
+          bookingDate === getDateKey(currentWeekStart) &&
+          Number.isInteger(booking.slot)
+        ) {
+          lessons.push({
+            level: data.level || "—",
+            title: data.title || "Untitled lesson",
+            when: `${formatDay(currentWeekStart)} · ${
+              timeSlots[booking.slot] || ""
             }`,
             student: data.studentName || "—",
             status: data.status === "live" ? "live" : "wait"
@@ -390,6 +452,49 @@ function startLessonsListener() {
   );
 }
 
+// ============================================================
+// AVAILABILITY LIVE SYNC
+// ============================================================
+
+function startAvailabilityListener() {
+  if (availabilityListenerStarted) return;
+
+  availabilityListenerStarted = true;
+
+  onSnapshot(
+    collection(db, "availability"),
+    (snapshot) => {
+      availability = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        availability.push({
+          id: docSnap.id,
+          teacherId: data.teacherId || null,
+          date: data.date || null,
+          slot: Number(data.slot),
+          label: data.label || "Open",
+          status: data.status || "available",
+          createdAt: data.createdAt || null
+        });
+      });
+
+      buildCalendar();
+      updateStatsFromBookings();
+    },
+    (error) => {
+      console.error("Availability listener error:", error);
+
+      setText(
+        "calEmpty",
+        `Unable to load availability: ${
+          error.code || "unknown error"
+        }`
+      );
+    }
+  );
+}
 // ============================================================
 // TEACHERS — LOAD TEACHER PROFILES
 // ============================================================
