@@ -54,6 +54,10 @@ const views = {
     title: "Calendar",
     subtitle: "Publish time, manage bookings."
   },
+  teachers: {
+    title: "Teachers",
+    subtitle: "Meet your ProLingo instructors."
+  },
   classroom: {
     title: "Classroom",
     subtitle: "Live lesson in progress."
