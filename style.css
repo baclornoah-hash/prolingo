@@ -739,3 +739,9 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
     height: 190px;
   }
 }
+
+.slot--available {
+  background: #dff7e8;
+  color: #176b3a;
+  border: 1px solid #8ed5a8;
+}
