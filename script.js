@@ -494,21 +494,27 @@ function startTeachersListener() {
   if (teachersListenerStarted) return;
   teachersListenerStarted = true;
 
-  const teachersQuery = query(
-    collection(db, "teachers"),
-    where("active", "==", true),
-    orderBy("name")
-  );
+  console.log("Starting teachers listener...");
 
   onSnapshot(
-    teachersQuery,
+    collection(db, "teachers"),
     (snapshot) => {
+      console.log(
+        "Teachers collection received:",
+        snapshot.size,
+        "document(s)"
+      );
+
       teachers = [];
 
       snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        console.log("Teacher document:", docSnap.id, data);
+
         teachers.push({
           id: docSnap.id,
-          ...docSnap.data()
+          ...data
         });
       });
 
@@ -516,9 +522,10 @@ function startTeachersListener() {
     },
     (error) => {
       console.error("Teachers listener error:", error);
+
       setText(
         "teacherEmpty",
-        "Unable to load teachers. Check your Firestore rules."
+        `Unable to load teachers: ${error.code} — ${error.message}`
       );
     }
   );
