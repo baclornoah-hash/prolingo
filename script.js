@@ -214,6 +214,8 @@ let availabilityListenerStarted = false;
 let selectedTeacherId = null;
 let selectedTeacherName = "";
 
+let calendarMode = "general";
+
 function getMonday(date) {
   const result = new Date(date);
   result.setHours(0, 0, 0, 0);
