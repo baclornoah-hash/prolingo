@@ -639,3 +639,103 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+   TEACHERS
+   ============================================================ */
+
+.page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.section-kicker {
+  display: block;
+  margin-bottom: 6px;
+  color: #5b3aa6;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.page-heading h2 {
+  margin: 0;
+}
+
+.page-heading p {
+  margin: 6px 0 0;
+  color: #777;
+}
+
+.teacher-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.teacher-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #eadff8;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(40, 25, 70, 0.06);
+}
+
+.teacher-photo {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  background: #eee8f8;
+}
+
+.teacher-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+}
+
+.teacher-card h3 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.teacher-specialization {
+  margin: 0;
+  color: #5b3aa6;
+  font-weight: 700;
+}
+
+.teacher-bio {
+  margin: 0;
+  color: #666;
+  line-height: 1.5;
+}
+
+.teacher-details {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #777;
+  font-size: 13px;
+}
+
+.teacher-card .solid-btn {
+  margin-top: 8px;
+}
+
+@media (max-width: 600px) {
+  .page-heading {
+    flex-direction: column;
+  }
+
+  .teacher-photo {
+    height: 190px;
+  }
+}
