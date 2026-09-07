@@ -781,6 +781,44 @@ if (chatInput) {
 }
 
 // ============================================================
+// CLASSROOM — SMOOTH SKIN FILTER
+// ============================================================
+
+const filterToggle = $("filterToggle");
+
+let smoothSkinEnabled = false;
+
+function applySmoothSkin() {
+  if (!localVideo) return;
+
+  if (smoothSkinEnabled) {
+    // A subtle softening effect.
+    localVideo.style.filter =
+      "blur(0.7px) brightness(1.03) saturate(1.04)";
+  } else {
+    localVideo.style.filter = "none";
+  }
+}
+
+if (filterToggle) {
+  filterToggle.addEventListener("click", () => {
+    if (!localStream) {
+      alert("Join the classroom first.");
+      return;
+    }
+
+    smoothSkinEnabled = !smoothSkinEnabled;
+
+    filterToggle.classList.toggle("is-on", smoothSkinEnabled);
+    filterToggle.textContent = smoothSkinEnabled
+      ? "Smooth skin on"
+      : "Smooth skin";
+
+    applySmoothSkin();
+  });
+}
+
+// ============================================================
 // CLASSROOM — ROOM STATE
 // ============================================================
 
