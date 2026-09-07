@@ -631,9 +631,7 @@ function startTeachersListener() {
 // ADMIN / TEACHER — PUBLISH AVAILABILITY
 // ============================================================
 
-const updateCalendarBtn = document.querySelector(
-  ".solid-btn[data-requires='manageOwnCalendar']"
-);
+const updateCalendarBtn = document.getElementById("updateCalendarBtn");
 
 if (updateCalendarBtn) {
   updateCalendarBtn.addEventListener("click", async () => {
