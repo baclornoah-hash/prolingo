@@ -1,3 +1,43 @@
+import {
+  auth
+} from "./firebase-config.js";
+
+import {
+  onAuthStateChanged,
+  signOut
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+const role = sessionStorage.getItem("prolingo_role");
+const name = sessionStorage.getItem("prolingo_name");
+
+const ALLOWED_ROLES = new Set([
+  "admin",
+  "teacher",
+  "student"
+]);
+
+function redirectToLogin() {
+  sessionStorage.removeItem("prolingo_role");
+  sessionStorage.removeItem("prolingo_name");
+  window.location.replace("login.html");
+}
+
+if (
+  !role ||
+  !name ||
+  !ALLOWED_ROLES.has(role)
+) {
+  redirectToLogin();
+} else {
+  onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      redirectToLogin();
+    }
+  });
+
+  // Keep your existing PERMISSIONS object and DOMContentLoaded code here.
+}
+
 const role = sessionStorage.getItem("prolingo_role");
 
 const name = sessionStorage.getItem("prolingo_name");
