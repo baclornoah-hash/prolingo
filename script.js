@@ -379,6 +379,111 @@ function buildCalendar() {
   updateCalendarHeader();
 }
 
+function buildTeacherSchedule() {
+  const tbody = $("teacherScheduleBody");
+
+  if (!tbody) return;
+
+  tbody.replaceChildren();
+
+  const weekDays = getWeekDays();
+
+  setText(
+    "teacherScheduleTitle",
+    selectedTeacherName
+      ? `${selectedTeacherName}’s Schedule`
+      : "Teacher’s Schedule"
+  );
+
+  setText(
+    "teacherScheduleSubtitle",
+    selectedTeacherName
+      ? `View ${selectedTeacherName}’s open and booked lessons.`
+      : "View this teacher’s open and booked lessons."
+  );
+
+  setText("teacherScheduleRange", formatRange());
+
+  document
+    .querySelectorAll("[data-teacher-schedule-day]")
+    .forEach((element, index) => {
+      if (weekDays[index]) {
+        element.textContent = formatDay(weekDays[index]);
+      }
+    });
+
+  timeSlots.forEach((time, rowIndex) => {
+    const tr = document.createElement("tr");
+
+    const timeTd = document.createElement("td");
+    timeTd.className = "time-cell";
+
+    const end = timeSlots[rowIndex + 1] || "12:30";
+    timeTd.textContent = `${time}–${end}`;
+
+    tr.appendChild(timeTd);
+
+    weekDays.forEach((date) => {
+      const td = document.createElement("td");
+      const dateKey = getDateKey(date);
+
+      const teacherBookings = bookings.filter(
+        (booking) =>
+          booking.teacherId === selectedTeacherId &&
+          booking.date === dateKey &&
+          booking.slot === rowIndex
+      );
+
+      const teacherAvailability = availability.filter(
+        (slot) =>
+          slot.teacherId === selectedTeacherId &&
+          slot.date === dateKey &&
+          slot.slot === rowIndex
+      );
+
+      teacherBookings.forEach((booking) => {
+        const slot = document.createElement("div");
+
+        slot.className = `slot slot--${booking.type || "booked"}`;
+        slot.textContent = booking.label || "Booked";
+
+        td.appendChild(slot);
+      });
+
+      teacherAvailability.forEach((availableSlot) => {
+        const slot = document.createElement("div");
+
+        slot.className = "slot slot--available";
+        slot.textContent = availableSlot.label || "Open";
+
+        td.appendChild(slot);
+      });
+
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+
+  const visibleBookings = bookings.filter(
+    (booking) =>
+      booking.teacherId === selectedTeacherId &&
+      weekDays.some((date) => getDateKey(date) === booking.date)
+  );
+
+  const visibleAvailability = availability.filter(
+    (slot) =>
+      slot.teacherId === selectedTeacherId &&
+      weekDays.some((date) => getDateKey(date) === slot.date)
+  );
+
+  showElement(
+    "teacherScheduleEmpty",
+    visibleBookings.length === 0 &&
+      visibleAvailability.length === 0
+  );
+}
+
 $("calPrev")?.addEventListener("click", () => {
   currentWeekStart.setDate(currentWeekStart.getDate() - 7);
   buildCalendar();
@@ -389,6 +494,16 @@ $("calNext")?.addEventListener("click", () => {
   currentWeekStart.setDate(currentWeekStart.getDate() + 7);
   buildCalendar();
   updateStatsFromBookings();
+});
+
+$("teacherSchedulePrev")?.addEventListener("click", () => {
+  currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+  buildTeacherSchedule();
+});
+
+$("teacherScheduleNext")?.addEventListener("click", () => {
+  currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  buildTeacherSchedule();
 });
 
 // ============================================================
