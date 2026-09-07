@@ -318,7 +318,11 @@ function buildCalendar() {
     tbody.appendChild(tr);
   });
 
-  showElement("calEmpty", bookings.length === 0);
+  const visibleBookings = bookings.filter((booking) =>
+  weekDays.some((date) => getDateKey(date) === booking.date)
+);
+
+showElement("calEmpty", visibleBookings.length === 0);
   updateCalendarHeader();
 }
 
@@ -344,13 +348,8 @@ function startLessonsListener() {
   if (lessonsListenerStarted) return;
   lessonsListenerStarted = true;
 
-  const lessonsQuery = query(
-    collection(db, "lessons"),
-    orderBy("slot")
-  );
-
   onSnapshot(
-    lessonsQuery,
+    collection(db, "lessons"),
     (snapshot) => {
       bookings = [];
       lessons = [];
@@ -363,22 +362,8 @@ function startLessonsListener() {
           (typeof data.day === "string" ? data.day : null);
 
         const booking = {
-          id: docSnap.id,
-          date: bookingDate,
-          day: data.day,
-          slot: Number(data.slot),
-          type: data.type || "booked",
-          label: data.label || data.studentName || "Booked",
-          studentName: data.studentName || data.label || "—"
-        };
-
-        bookings.push(booking);
-
-        if (bookingDate === getDateKey(currentWeekStart)) {
-          lessons.push({
-            level: data.level || "—",
-            title: data.title || "Untitled lesson",
-            when: `${formatDay(currentWeekStart)} · ${timeSlots[booking.slot] || ""}`,
+          id: dot] || ""
+            }`,
             student: data.studentName || "—",
             status: data.status === "live" ? "live" : "wait"
           });
@@ -391,8 +376,16 @@ function startLessonsListener() {
     },
     (error) => {
       console.error("Lessons listener error:", error);
-      setText("calEmpty", "Unable to load lessons.");
-      setText("lessonEmpty", "Unable to load lessons.");
+
+      setText(
+        "calEmpty",
+        "Unable to load lessons. Check your Firestore rules."
+      );
+
+      setText(
+        "lessonEmpty",
+        "Unable to load lessons."
+      );
     }
   );
 }
