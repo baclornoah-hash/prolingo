@@ -103,75 +103,151 @@
      (Firebase console → Project settings → General → Your apps)
      ============================================================ -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
-    getAuth,
+    auth,
+    db
+  } from "./firebase-config.js";
+
+  import {
     signInWithEmailAndPassword
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
   import {
-    getFirestore,
     doc,
     getDoc
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyBGWM-ac-jKpP1qjW7MBEUAI-Tls7tP_Rk",
-    authDomain: "prolingo-2de9d.firebaseapp.com",
-    projectId: "prolingo-2de9d",
-    storageBucket: "prolingo-2de9d.firebasestorage.app",
-    messagingSenderId: "59292786878",
-    appId: "1:59292786878:web:bd6e737458fdd8d9aabeef"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
-
   const form = document.getElementById("loginForm");
   const errorBox = document.getElementById("loginError");
+  const submitButton = form.querySelector("button[type='submit']");
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    errorBox.style.display = "none";
+  const ALLOWED_ROLES = new Set([
+    "admin",
+    "teacher",
+    "student"
+  ]);
 
-    const email = document.getElementById("email").value.trim();
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    hideError();
+    setLoading(true);
+
+    const email = document
+      .getElementById("email")
+      .value
+      .trim()
+      .toLowerCase();
+
     const password = document.getElementById("password").value;
 
     try {
-      // 1. Authenticate
-      const cred = await signInWithEmailAndPassword(auth, email, password);
+      // Authenticate the account with Firebase.
+      const credential = await signInWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
 
-      // 2. Look up this user's role from Firestore
-      //    (users/{uid} document created at signup — see admin-users.html)
-      const userDoc = await getDoc(doc(db, "users", cred.user.uid));
+      const uid = credential.user.uid;
 
-      if (!userDoc.exists()) {
-        throw new Error("No role assigned to this account yet. Ask an admin to set one up.");
+      // Read the user's profile and role.
+      const userReference = doc(db, "users", uid);
+      const userSnapshot = await getDoc(userReference);
+
+      if (!userSnapshot.exists()) {
+        throw new Error(
+          "Your account exists, but no ProLingo profile has been assigned yet. Please contact an administrator."
+        );
       }
 
-      const { role, name } = userDoc.data();
+      const userData = userSnapshot.data();
 
-      // 3. Store minimal session info for the dashboard to read
+      const role = String(userData.role || "")
+        .trim()
+        .toLowerCase();
+
+      const name = String(userData.name || "")
+        .trim();
+
+      if (!ALLOWED_ROLES.has(role)) {
+        throw new Error(
+          "This account has an invalid role. Please ask an administrator to correct your profile."
+        );
+      }
+
+      if (!name) {
+        throw new Error(
+          "Your account profile is missing a name. Please ask an administrator to complete it."
+        );
+      }
+
+      // Clear old values before saving the current account.
+      sessionStorage.removeItem("prolingo_role");
+      sessionStorage.removeItem("prolingo_name");
+
       sessionStorage.setItem("prolingo_role", role);
-      sessionStorage.setItem("prolingo_name", name || email);
+      sessionStorage.setItem("prolingo_name", name);
 
-      // 4. Route by role — same dashboard shell, different views unlocked
-      window.location.href = "index.html";
+      window.location.replace("index.html");
 
-    } catch (err) {
-      errorBox.textContent = friendlyError(err);
-      errorBox.style.display = "block";
+    } catch (error) {
+      console.error("ProLingo login error:", error);
+      showError(friendlyError(error));
+      setLoading(false);
     }
   });
 
-  function friendlyError(err){
-    const code = err.code || "";
-    if (code.includes("wrong-password") || code.includes("invalid-credential")) return "Incorrect email or password.";
-    if (code.includes("user-not-found")) return "No account found with that email.";
-    if (code.includes("too-many-requests")) return "Too many attempts — try again shortly.";
-    return err.message || "Something went wrong signing in.";
+  function setLoading(isLoading) {
+    submitButton.disabled = isLoading;
+    submitButton.textContent = isLoading
+      ? "Signing in..."
+      : "Sign in";
+  }
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.style.display = "block";
+  }
+
+  function hideError() {
+    errorBox.textContent = "";
+    errorBox.style.display = "none";
+  }
+
+  function friendlyError(error) {
+    const code = error.code || "";
+
+    if (
+      code.includes("wrong-password") ||
+      code.includes("invalid-credential")
+    ) {
+      return "Incorrect email or password.";
+    }
+
+    if (code.includes("user-not-found")) {
+      return "No account found with that email.";
+    }
+
+    if (code.includes("invalid-email")) {
+      return "Please enter a valid email address.";
+    }
+
+    if (code.includes("user-disabled")) {
+      return "This account has been disabled. Please contact an administrator.";
+    }
+
+    if (code.includes("too-many-requests")) {
+      return "Too many attempts. Please try again later.";
+    }
+
+    if (code.includes("network-request-failed")) {
+      return "Network error. Check your internet connection and try again.";
+    }
+
+    return error.message || "Something went wrong signing in.";
   }
 </script>
-
+  
 </body>
 </html>
