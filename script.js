@@ -840,9 +840,17 @@ loadRoom(null);
 // AUTH STATE
 // ============================================================
 
+let currentUser = null;
+
 onAuthStateChanged(auth, (user) => {
+  currentUser = user;
+
   if (user) {
     console.log("Signed in:", user.uid);
+    console.log(
+      "Role:",
+      sessionStorage.getItem("prolingo_role")
+    );
   } else {
     console.log("No signed-in user.");
   }
