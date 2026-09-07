@@ -32,6 +32,10 @@
       <span class="rail-icon">▤</span> Calendar
     </button>
 
+    <button class="rail-link" data-view="teachers">
+  <span class="rail-icon">♙</span> Teachers
+</button>
+
     <button class="rail-link" data-view="classroom">
       <span class="rail-icon">●</span> Classroom
     </button>
@@ -133,6 +137,35 @@
 
       </div>
     </section>
+
+    <!-- ============ TEACHERS VIEW ============ -->
+<section class="view" id="view-teachers">
+
+  <div class="page-heading">
+    <div>
+      <span class="section-kicker">Our instructors</span>
+      <h2>Choose your teacher</h2>
+      <p>Explore our available teachers and their teaching specialties.</p>
+    </div>
+
+    <button
+      class="solid-btn"
+      data-requires="manageTeachers"
+      id="addTeacherBtn"
+    >
+      Add teacher
+    </button>
+  </div>
+
+  <div class="teacher-grid" id="teacherGrid">
+    <!-- Teacher cards will be loaded from Firestore here. -->
+  </div>
+
+  <p class="empty-state" id="teacherEmpty">
+    No teachers have been added yet.
+  </p>
+
+</section>
 
     <!-- ============ CALENDAR VIEW ============ -->
     <section class="view" id="view-calendar">
