@@ -565,10 +565,12 @@ function renderTeachers() {
     button.textContent = "View availability";
 
     button.addEventListener("click", () => {
-      alert(
-        `Availability for ${teacher.name || "this teacher"} will be added next.`
-      );
-    });
+  selectedTeacherId = teacher.id;
+  selectedTeacherName = teacher.name || "Teacher";
+
+  showView("calendar");
+  buildCalendar();
+});
 
     content.append(
       name,
@@ -625,7 +627,8 @@ function startTeachersListener() {
 }
 
 // ============================================================
-// ADMIN / TEACHER — ADD A LESSON SLOT
+// ============================================================
+// ADMIN / TEACHER — PUBLISH AVAILABILITY
 // ============================================================
 
 const updateCalendarBtn = document.querySelector(
@@ -634,6 +637,11 @@ const updateCalendarBtn = document.querySelector(
 
 if (updateCalendarBtn) {
   updateCalendarBtn.addEventListener("click", async () => {
+    if (!currentUser) {
+      alert("Please sign in first.");
+      return;
+    }
+
     const dayInput = prompt(
       "Which day? Enter a number:\n0=Mon 1=Tue 2=Wed 3=Thu 4=Fri 5=Sat 6=Sun"
     );
@@ -659,7 +667,11 @@ if (updateCalendarBtn) {
 
     const slot = Number(slotInput);
 
-    if (!Number.isInteger(slot) || slot < 0 || slot >= timeSlots.length) {
+    if (
+      !Number.isInteger(slot) ||
+      slot < 0 ||
+      slot >= timeSlots.length
+    ) {
       alert("Please enter a valid time slot.");
       return;
     }
@@ -667,36 +679,35 @@ if (updateCalendarBtn) {
     const selectedDate = new Date(currentWeekStart);
     selectedDate.setDate(selectedDate.getDate() + day);
 
-    const studentName =
-      prompt("Student name (or leave blank for an open slot):") ||
-      "Open slot";
+    const date = getDateKey(selectedDate);
 
-    const title =
-      prompt("Lesson title (e.g. English Program P2 · Lesson 0):") ||
-      "Untitled lesson";
+    const duplicate = availability.some(
+      (item) =>
+        item.teacherId === currentUser.uid &&
+        item.date === date &&
+        item.slot === slot
+    );
 
-    const level =
-      prompt("Level label (e.g. Lv 6):") ||
-      "—";
+    if (duplicate) {
+      alert("You already published this availability slot.");
+      return;
+    }
 
     try {
-      await addDoc(collection(db, "lessons"), {
-        date: getDateKey(selectedDate),
+      await addDoc(collection(db, "availability"), {
+        teacherId: currentUser.uid,
+        date,
         day,
         slot,
-        type: "booked",
-        label: studentName,
-        studentName,
-        title,
-        level,
-        status: "wait",
+        label: "Open",
+        status: "available",
         createdAt: Date.now()
       });
 
-      alert("Lesson saved successfully.");
+      alert("Availability published successfully.");
     } catch (error) {
-      console.error("Unable to save lesson:", error);
-      alert("Couldn't save that lesson: " + error.message);
+      console.error("Unable to publish availability:", error);
+      alert("Couldn't publish availability: " + error.message);
     }
   });
 }
@@ -1119,7 +1130,8 @@ onAuthStateChanged(auth, (user) => {
     console.log("Role:", role);
 
     startLessonsListener();
-    startTeachersListener();
+startAvailabilityListener();
+startTeachersListener();
   } else {
     console.log("No signed-in user.");
   }
