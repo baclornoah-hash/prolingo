@@ -215,7 +215,76 @@
           <tbody id="calBody"></tbody>
         </table>
       </div>
-      <p class="empty-state" id="calEmpty">No time slots published yet.</p>
+            <p class="empty-state" id="calEmpty">No time slots published yet.</p>
+    </section>
+
+    <!-- ============ TEACHER SCHEDULE VIEW ============ -->
+    <section class="view" id="view-teacher-schedule">
+
+      <div class="page-heading">
+        <div>
+          <span class="section-kicker">Teacher schedule</span>
+          <h2 id="teacherScheduleTitle">Teacher’s Schedule</h2>
+          <p id="teacherScheduleSubtitle">
+            View this teacher’s open and booked lessons.
+          </p>
+        </div>
+      </div>
+
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button
+            class="icon-btn"
+            id="teacherSchedulePrev"
+            type="button"
+          >
+            ‹
+          </button>
+
+          <strong id="teacherScheduleRange">
+            This week
+          </strong>
+
+          <button
+            class="icon-btn"
+            id="teacherScheduleNext"
+            type="button"
+          >
+            ›
+          </button>
+        </div>
+
+        <div class="cal-legend">
+          <span><i class="dot dot--peak"></i>Peak time</span>
+          <span><i class="dot dot--booked"></i>Booked</span>
+          <span><i class="dot dot--reserved"></i>Reserved</span>
+          <span><i class="dot dot--pending"></i>Scheduling</span>
+        </div>
+      </div>
+
+      <div class="cal-scroll">
+        <table class="cal-grid" id="teacherScheduleGrid">
+          <thead>
+            <tr>
+              <th class="cal-time-col">Time</th>
+              <th data-teacher-schedule-day>Mon</th>
+              <th data-teacher-schedule-day>Tue</th>
+              <th data-teacher-schedule-day>Wed</th>
+              <th data-teacher-schedule-day>Thu</th>
+              <th data-teacher-schedule-day>Fri</th>
+              <th data-teacher-schedule-day>Sat</th>
+              <th data-teacher-schedule-day>Sun</th>
+            </tr>
+          </thead>
+
+          <tbody id="teacherScheduleBody"></tbody>
+        </table>
+      </div>
+
+      <p class="empty-state" id="teacherScheduleEmpty">
+        No open or booked schedules for this week.
+      </p>
+
     </section>
 
     <!-- ============ CLASSROOM VIEW ============ -->
