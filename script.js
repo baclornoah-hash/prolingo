@@ -604,20 +604,6 @@ function renderTeachers() {
     card.append(photo, content);
     teacherGrid.appendChild(card);
   });
-
-  button.addEventListener("click", () => {
-  if (!teacher.authUid) {
-    alert("This teacher is missing their Firebase Auth UID.");
-    return;
-  }
-
-  selectedTeacherId = teacher.authUid;
-  selectedTeacherName = teacher.name || "Teacher";
-  calendarMode = "teacherSchedule";
-
-  showView("calendar");
-  buildCalendar();
-});
   
 }
 
