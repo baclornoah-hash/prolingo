@@ -71,13 +71,13 @@ if (
     },
 
     teacher: {
-      uploadSlides: true,
-      manageOwnCalendar: true,
-      manageCalendarTemplate: false,
-      manageAccounts: false,
-      viewAllClassrooms: false
-    },
-
+  uploadSlides: false,
+  manageOwnCalendar: true,
+  manageCalendarTemplate: false,
+  manageAccounts: false,
+  viewAllClassrooms: false
+}
+      
     student: {
       uploadSlides: false,
       manageOwnCalendar: false,
