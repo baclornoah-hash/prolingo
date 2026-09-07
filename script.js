@@ -788,10 +788,6 @@ if (chatInput) {
 // CLASSROOM — SMOOTH SKIN FILTER
 // ============================================================
 
-const filterToggle = $("filterToggle");
-
-let smoothSkinEnabled = false;
-
 function applySmoothSkin() {
   if (!localVideo) return;
 
