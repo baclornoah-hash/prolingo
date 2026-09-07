@@ -75,7 +75,11 @@ const viewTitle = $("viewTitle");
 const viewSubtitle = $("viewSubtitle");
 
 function showView(name) {
-  const targetView = $(`view-${name}`);
+  const viewId = name === "teacherSchedule"
+    ? "view-teacher-schedule"
+    : `view-${name}`;
+
+  const targetView = $(viewId);
 
   if (!targetView || !views[name]) {
     console.error(`View not found: view-${name}`);
