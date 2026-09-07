@@ -180,7 +180,24 @@
 
         <div class="classroom-stage">
           <div class="stage-toolbar">
-            <div class="room-code">Room <span id="roomCode">—</span></div>
+            <div class="room-code">
+  Room <span id="roomCode">—</span>
+</div>
+
+<div class="room-entry">
+  <input
+    type="text"
+    id="roomInput"
+    placeholder="Enter room code"
+    maxlength="30"
+  >
+  <button class="solid-btn" id="createRoomBtn">
+    Create room
+  </button>
+  <button class="ghost-btn" id="joinRoomBtn">
+    Join room
+  </button>
+</div>
             <div class="stage-timer">Starts in <strong id="stageTimer">--:--:--</strong></div>
             <button class="start-btn" data-requires="uploadSlides">Start class</button>
           </div>
@@ -206,10 +223,13 @@
         <div class="video-porthole">
   <div class="video-porthole-ring">
     <div class="video-fill" id="videoFill">
-      <video id="localVideo" autoplay playsinline muted></video>
-      <span id="videoLabel">Waiting to join…</span>
-    </div>
-  </div>
+  <video id="localVideo" autoplay playsinline muted></video>
+
+  <video id="remoteVideo" autoplay playsinline></video>
+
+  <span id="videoLabel">Waiting to join…</span>
+  <span id="remoteVideoLabel">Waiting for another participant…</span>
+</div>
 
   <button class="solid-btn" id="joinClassBtn">Join classroom</button>
 
