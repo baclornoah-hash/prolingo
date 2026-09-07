@@ -48,14 +48,22 @@ const views = {
     title: "Dashboard",
     subtitle: "Where today's lessons begin."
   },
+
   calendar: {
     title: "Calendar",
     subtitle: "Publish time, manage bookings."
   },
+
   teachers: {
     title: "Teachers",
     subtitle: "Meet your ProLingo instructors."
   },
+
+  teacherSchedule: {
+    title: "Teacher’s Schedule",
+    subtitle: "View this teacher’s open and booked lessons."
+  },
+
   classroom: {
     title: "Classroom",
     subtitle: "Live lesson in progress."
