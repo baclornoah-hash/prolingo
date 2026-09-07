@@ -1,30 +1,20 @@
-// ============================================================
+/// ============================================================
 // FIREBASE
 // ============================================================
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { auth, db } from "./firebase-config.js";
+
 import {
-  getFirestore,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+import {
   collection,
   addDoc,
   onSnapshot,
   query,
   orderBy
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBGWM-acjKpP1qjW7MBEUAI-Tls7tP_Rk",
-  authDomain: "prolingo-2de9d.firebaseapp.com",
-  projectId: "prolingo-2de9d",
-  storageBucket: "prolingo-2de9d.firebasestorage.app",
-  messagingSenderId: "59292786878",
-  appId: "1:59292786878:web:bd6e737458fdd8d9aabeef"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
 
 // ============================================================
 // HELPERS
