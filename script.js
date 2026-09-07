@@ -565,11 +565,15 @@ function renderTeachers() {
     button.textContent = "View availability";
 
     button.addEventListener("click", () => {
-  selectedTeacherId = teacher.authUid || teacher.id;
-  selectedTeacherName = teacher.name || "Teacher";
+  selectedTeacherId = teacher.authUid;
 
-  console.log("Selected teacher ID:", selectedTeacherId);
-  console.log("Selected teacher:", teacher);
+  if (!selectedTeacherId) {
+    alert("This teacher is missing their Firebase Auth UID.");
+    console.error("Missing authUid for teacher:", teacher);
+    return;
+  }
+
+  selectedTeacherName = teacher.name || "Teacher";
 
   showView("calendar");
   buildCalendar();
