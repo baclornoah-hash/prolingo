@@ -333,7 +333,10 @@ function buildCalendar() {
           booking.slot === rowIndex
       );
 
-      const availabilityMatches = availability.filter(
+      const availabilityMatches =
+  sessionStorage.getItem("prolingo_role") === "student"
+    ? []
+    : availability.filter(
         (slot) =>
           slot.date === dateKey &&
           slot.slot === rowIndex &&
@@ -373,15 +376,21 @@ function buildCalendar() {
     )
   );
 
-  const visibleAvailability = availability.filter((slot) =>
-  weekDays.some(
-    (date) => getDateKey(date) === slot.date
-  ) &&
-  (
-    !selectedTeacherId ||
-    slot.teacherId === selectedTeacherId
-  )
-);
+  const role = sessionStorage.getItem("prolingo_role");
+
+const visibleAvailability =
+  role === "student"
+    ? []
+    : availability.filter(
+        (slot) =>
+          weekDays.some(
+            (date) => getDateKey(date) === slot.date
+          ) &&
+          (
+            !selectedTeacherId ||
+            slot.teacherId === selectedTeacherId
+          )
+      );
 
   showElement(
     "calEmpty",
