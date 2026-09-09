@@ -56,6 +56,11 @@ function escapeHtml(value) {
 // ============================================================
 
 const views = {
+  dashboard: {
+    title: "Dashboard",
+    subtitle: "Where today's lessons begin."
+  },
+
   calendar: {
     title: "Calendar",
     subtitle:
