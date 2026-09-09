@@ -331,6 +331,9 @@ function buildCalendar() {
 
     weekDays.forEach((date) => {
       const td = document.createElement("td");
+      td.addEventListener("click", () => {
+  alert("CELL CLICKED");
+});
       const dateKey = getDateKey(date);
 
       const bookingMatches = bookings.filter(
