@@ -96,13 +96,6 @@ function showView(name) {
 
   const targetView = $(viewId);
 
-  alert(
-  "name = " + name +
-  "\nviewId = " + viewId +
-  "\ntargetView = " + !!targetView +
-  "\nviews[name] = " + !!views[name]
-);
-
   if (!targetView || !views[name]) {
     console.error(`View not found: view-${name}`);
     return;
