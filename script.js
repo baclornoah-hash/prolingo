@@ -1,5 +1,5 @@
-/// ============================================================
-// FIREBAS
+// ============================================================
+// FIREBASE
 // ============================================================
 
 import { auth, db } from "./firebase-config.js";
@@ -309,109 +309,11 @@ function updateCalendarHeader() {
   });
 }
 
+// ------------------------------------------------------------
+// buildCalendar — was duplicated (one copy pasted inside the
+// other's catch block). Single clean definition now.
+// ------------------------------------------------------------
 function buildCalendar() {
-  const tbody = $("calBody");
-
-  if (!tbody) return;
-
-  tbody.replaceChildren();
-
-  const weekDays = getWeekDays();
-
-  timeSlots.forEach((time, rowIndex) => {
-    const tr = document.createElement("tr");
-
-    const timeTd = document.createElement("td");
-    timeTd.className = "time-cell";
-
-    const end = timeSlots[rowIndex + 1] || "12:30";
-    timeTd.textContent = `${time}–${end}`;
-
-    tr.appendChild(timeTd);
-
-    weekDays.forEach((date) => {
-      const td = document.createElement("td");
-      const dateKey = getDateKey(date);
-
-      const bookingMatches = bookings.filter(
-        (booking) =>
-          booking.date === dateKey &&
-          booking.slot === rowIndex
-      );
-
-      const availabilityMatches = availability.filter(
-        (slot) =>
-          slot.date === dateKey &&
-          slot.slot === rowIndex &&
-          (
-            !selectedTeacherId ||
-            slot.teacherId === selectedTeacherId
-          )
-      );
-
-      bookingMatches.forEach((match) => {
-        const slot = document.createElement("div");
-
-        slot.className = `slot slot--${match.type || "booked"}`;
-        slot.textContent = match.label || "Booked";
-
-        td.appendChild(slot);
-      });
-
-      availabilityMatches.forEach((match) => {
-        const slot = document.createElement("button");
-
-        slot.type = "button";
-        slot.className = "slot slot--available";
-        slot.textContent = match.label || "Open";
-
-        const role = sessionStorage.getItem("prolingo_role");
-
-        if (role === "student") {
-          slot.style.cursor = "pointer";
-
-          slot.addEventListener("click", async () => {
-            if (!currentUser) {
-              alert("You must be signed in to book a lesson.");
-              return;
-            }
-
-            if (bookingMatches.length > 0) {
-              alert("This schedule has already been booked.");
-              return;
-            }
-
-            const confirmed = confirm(
-              `Book this lesson on ${dateKey} at ${time}?`
-            );
-
-            if (!confirmed) return;
-
-            slot.disabled = true;
-            slot.textContent = "Booking...";
-
-            try {
-              await addDoc(collection(db, "lessons"), {
-                type: "booking",
-                teacherId: match.teacherId || null,
-                studentId: currentUser.uid,
-                studentName:
-                  sessionStorage.getItem("prolingo_name") || "Student",
-                date: dateKey,
-                day: dateKey,
-                slot: rowIndex,
-                status: "scheduled",
-                createdAt: Date.now()
-              });
-
-              alert("Lesson booked successfully!");
-
-            } catch (error) {
-              console.error("Booking failed:", error);
-
-              slot.disabled = false;
-
-              function buildCalendar() {
   const tbody = $("calBody");
 
   if (!tbody) return;
@@ -555,7 +457,11 @@ function buildCalendar() {
   updateCalendarHeader();
 }
 
-
+// ------------------------------------------------------------
+// buildTeacherSchedule — this one was duplicated FOUR times in
+// the pasted file, and the third copy was broken mid-statement.
+// Single clean definition now.
+// ------------------------------------------------------------
 function buildTeacherSchedule() {
   const tbody = $("teacherScheduleBody");
 
@@ -676,447 +582,6 @@ function buildTeacherSchedule() {
               });
 
               alert("Lesson booked successfully!");
-            } catch (error) {
-              console.error("Booking failed:", error);
-
-              slot.disabled = false;
-              slot.textContent =
-                availableSlot.label || "Open";
-
-              alert(
-                "Booking failed. Please check your Firestore permissions."
-              );
-            }
-          });
-        }
-
-        td.appendChild(slot);
-      });
-
-      tr.appendChild(td);
-    });
-
-    tbody.appendChild(tr);
-  });
-
-  const visibleBookings = bookings.filter(
-    (booking) =>
-      booking.teacherId === selectedTeacherId &&
-      weekDays.some(
-        (date) => getDateKey(date) === booking.date
-      )
-  );
-
-  const visibleAvailability = availability.filter(
-    (slot) =>
-      slot.teacherId === selectedTeacherId &&
-      weekDays.some(
-        (date) => getDateKey(date) === slot.date
-      )
-  );
-
-  showElement(
-    "teacherScheduleEmpty",
-    visibleBookings.length === 0 &&
-      visibleAvailability.length === 0
-  );
-}
-
-function buildTeacherSchedule() {
-  const tbody = $("teacherScheduleBody");
-
-  if (!tbody) return;
-
-  tbody.replaceChildren();
-
-  const weekDays = getWeekDays();
-
-  setText(
-    "teacherScheduleTitle",
-    selectedTeacherName
-      ? `${selectedTeacherName}’s Schedule`
-      : "Teacher’s Schedule"
-  );
-
-  setText(
-    "teacherScheduleSubtitle",
-    selectedTeacherName
-      ? `View ${selectedTeacherName}’s open and booked lessons.`
-      : "View this teacher’s open and booked lessons."
-  );
-
-  setText("teacherScheduleRange", formatRange());
-
-  document
-    .querySelectorAll("[data-teacher-schedule-day]")
-    .forEach((element, index) => {
-      if (weekDays[index]) {
-        element.textContent = formatDay(weekDays[index]);
-      }
-    });
-
-  timeSlots.forEach((time, rowIndex) => {
-    const tr = document.createElement("tr");
-
-    const timeTd = document.createElement("td");
-    timeTd.className = "time-cell";
-
-    const end = timeSlots[rowIndex + 1] || "12:30";
-    timeTd.textContent = `${time}–${end}`;
-
-    tr.appendChild(timeTd);
-
-    weekDays.forEach((date) => {
-      const td = document.createElement("td");
-      const dateKey = getDateKey(date);
-
-      const teacherBookings = bookings.filter(
-        (booking) =>
-          booking.teacherId === selectedTeacherId &&
-          booking.date === dateKey &&
-          booking.slot === rowIndex
-      );
-
-      const teacherAvailability = availability.filter(
-        (slot) =>
-          slot.teacherId === selectedTeacherId &&
-          slot.date === dateKey &&
-          slot.slot === rowIndex
-      );
-
-      teacherBookings.forEach((booking) => {
-        const slot = document.createElement("div");
-
-        slot.className = `slot slot--${booking.type || "booked"}`;
-        slot.textContent = booking.label || "Booked";
-
-        td.appendChild(slot);
-      });
-
-      teacherAvailability.forEach((availableSlot) => {
-        const role = sessionStorage.getItem("prolingo_role");
-
-        const slot = document.createElement("button");
-
-        slot.type = "button";
-        slot.className = "slot slot--available";
-        slot.textContent = availableSlot.label || "Open";
-
-        if (role === "student") {
-          slot.style.cursor = "pointer";
-
-          slot.addEventListener("click", async () => {
-            if (!currentUser) {
-              alert("You must be signed in to book a lesson.");
-              return;
-            }
-
-            if (teacherBookings.length > 0) {
-              alert("This schedule has already been booked.");
-              return;
-            }
-
-            const confirmed = confirm(
-              `Book ${selectedTeacherName}'s lesson on ${dateKey} at ${time}?`
-            );
-
-            if (!confirmed) return;
-
-            slot.disabled = true;
-            slot.textContent = "Booking...";
-
-            try {
-              await addDoc(collection(db, "lessons"), {
-                type: "booking",
-                teacherId: selectedTeacherId,
-                teacherName:
-                  selectedTeacherName || "Teacher",
-                studentId: currentUser.uid,
-                studentName:
-                  sessionStorage.getItem("prolingo_name") || "Student",
-                date: dateKey,
-                day: dateKey,
-                slot: rowIndex,
-                status: "scheduled",
-                createdAt: Date.now()
-              });
-
-              alert("Lesson booked successfully!");
-
-            } catch (error) {
-              console.error("Booking failed:", error);
-
-              slot.disabled = false;
-              slot.textContent =
-                availableSlot.label || "Open";
-
-              alert(
-                "Booking failed. Please check your Firestore permissions."
-              );
-            }
-          });
-        }
-
-        td.appendChild(slot);
-      });
-
-      tr.appendChild(td);
-    });
-
-    tbody.appendChild(tr);
-  });
-
-  const visibleBookings = bookings.filter(
-    (booking) =>
-      booking.teacherId === selectedTeacherId &&
-      weekDays.some(
-        (date) => getDateKey(date) === booking.date
-      )
-  );
-
-  const visibleAvailability = availability.filter(
-    (slot) =>
-      slot.teacherId === selectedTeacherId &&
-      weekDays.some(
-        (date) => getDateKey(date) === slot.date
-      )
-  );
-
-  showElement(
-    "teacherScheduleEmpty",
-    visibleBookings.length === 0 &&
-      visibleAvailability.length === 0
-  );
-}
-
-function buildTeacherSchedule() {
-  const tbody = $("teacherScheduleBody");
-
-  if (!tbody) return;
-
-  tbody.replaceChildren();
-
-  const weekDays = getWeekDays();
-
-  setText(
-    "teacherScheduleTitle",
-    selectedTeacherName
-      ? `${selectedTeacherName}’s Schedule`
-      : "Teacher’s Schedule"
-  );
-
-  setText(
-    "teacherScheduleSubtitle",
-    selectedTeacherName
-      ? `View ${selectedTeacherName}’s open and booked lessons.`
-      : "View this teacher’s open and booked lessons."
-  );
-
-  setText("teacherScheduleRange", formatRange());
-
-  document
-    .querySelectorAll("[data-teacher-schedule-day]")
-    .forEach((element, index) => {
-      if (weekDays[index]) {
-        element.textContent = formatDay(weekDays[index]);
-      }
-    });
-
-  timeSlots.forEach((time, rowIndex) => {
-    const tr = document.createElement("tr");
-
-    const timeTd = document.createElement("td");
-    timeTd.className = "time-cell";
-
-    const end = timeSlots[rowIndex + 1] || "12:30";
-    timeTd.textContent = `${time}–${end}`;
-
-    tr.appendChild(timeTd);
-
-    weekDays.forEach((date) => {
-      const td = document.createElement("td");
-      const dateKey = getDateKey(date);
-
-      const teacherBookings = bookings.filter(
-        (booking) =>
-          booking.teacherId === selectedTeacherId &&
-          booking.date === dateKey &&
-          booking.slot === rowIndex
-      );
-
-      const teacherAvailability = availability.filter(
-        (slot) =>
-          slot.teacherId === selectedTeacherId &&
-          slot.date === dateKey &&
-          slot.slot === rowIndex
-      );
-
-      teacherBookings.forEach((booking) => {
-        const slot = document.createElement("div");
-
-        slot.className = `slot slot--${booking.type || "booked"}`;
-        slot.textContent = booking.label || "Booked";
-
-        td.appendChild(slot);
-      });
-
-      teacherAvailability.forEach((availableSlot) => {
-  const role = sessionStorage.getItem("prolingo_role");
-
-  const slot = document.createElement("button");
-  slot.type = "button";
-
-  slot.className = "slot slot--available";
-  slot.textContent = availableSlot.label || "Open";
-
-  if (role === "student") {
-    slot.style.cursor = "pointer";
-
-    slot.addEventListener("click", async () => {
-      if (!currentUser) {
-        alert("You must be signed in to book a lesson.");
-        return;
-      }
-
-      if (teacherBookings.length > 0) {
-        alert("This schedule has already been booked.");
-        return;
-      }
-
-      const confirmed = confirm(
-        `Book ${selectedTeacherName}'s lesson on ${dateKey} at ${time}?`
-      );
-
-      if (!confirmed) return;
-
-      slot.disabled = true;
-      slot.textContent = "Booking...";
-
-      try {
-        await addDoc(collection(db, "lessons"), {
-          type: "booking",
-          teacherId: selectedTeacherId,
-function buildTeacherSchedule() {
-  const tbody = $("teacherScheduleBody");
-
-  if (!tbody) return;
-
-  tbody.replaceChildren();
-
-  const weekDays = getWeekDays();
-
-  setText(
-    "teacherScheduleTitle",
-    selectedTeacherName
-      ? `${selectedTeacherName}’s Schedule`
-      : "Teacher’s Schedule"
-  );
-
-  setText(
-    "teacherScheduleSubtitle",
-    selectedTeacherName
-      ? `View ${selectedTeacherName}’s open and booked lessons.`
-      : "View this teacher’s open and booked lessons."
-  );
-
-  setText("teacherScheduleRange", formatRange());
-
-  document
-    .querySelectorAll("[data-teacher-schedule-day]")
-    .forEach((element, index) => {
-      if (weekDays[index]) {
-        element.textContent = formatDay(weekDays[index]);
-      }
-    });
-
-  timeSlots.forEach((time, rowIndex) => {
-    const tr = document.createElement("tr");
-
-    const timeTd = document.createElement("td");
-    timeTd.className = "time-cell";
-
-    const end = timeSlots[rowIndex + 1] || "12:30";
-    timeTd.textContent = `${time}–${end}`;
-
-    tr.appendChild(timeTd);
-
-    weekDays.forEach((date) => {
-      const td = document.createElement("td");
-      const dateKey = getDateKey(date);
-
-      const teacherBookings = bookings.filter(
-        (booking) =>
-          booking.teacherId === selectedTeacherId &&
-          booking.date === dateKey &&
-          booking.slot === rowIndex
-      );
-
-      const teacherAvailability = availability.filter(
-        (slot) =>
-          slot.teacherId === selectedTeacherId &&
-          slot.date === dateKey &&
-          slot.slot === rowIndex
-      );
-
-      teacherBookings.forEach((booking) => {
-        const slot = document.createElement("div");
-
-        slot.className = `slot slot--${booking.type || "booked"}`;
-        slot.textContent = booking.label || "Booked";
-
-        td.appendChild(slot);
-      });
-
-      teacherAvailability.forEach((availableSlot) => {
-        const role = sessionStorage.getItem("prolingo_role");
-
-        const slot = document.createElement("button");
-
-        slot.type = "button";
-        slot.className = "slot slot--available";
-        slot.textContent = availableSlot.label || "Open";
-
-        if (role === "student") {
-          slot.style.cursor = "pointer";
-
-          slot.addEventListener("click", async () => {
-            if (!currentUser) {
-              alert("You must be signed in to book a lesson.");
-              return;
-            }
-
-            if (teacherBookings.length > 0) {
-              alert("This schedule has already been booked.");
-              return;
-            }
-
-            const confirmed = confirm(
-              `Book ${selectedTeacherName}'s lesson on ${dateKey} at ${time}?`
-            );
-
-            if (!confirmed) return;
-
-            slot.disabled = true;
-            slot.textContent = "Booking...";
-
-            try {
-              await addDoc(collection(db, "lessons"), {
-                type: "booking",
-                teacherId: selectedTeacherId,
-                teacherName:
-                  selectedTeacherName || "Teacher",
-                studentId: currentUser.uid,
-                studentName:
-                  sessionStorage.getItem("prolingo_name") || "Student",
-                date: dateKey,
-                day: dateKey,
-                slot: rowIndex,
-                status: "scheduled",
-                createdAt: Date.now()
-              });
-
-              alert("Lesson booked successfully!");
-
             } catch (error) {
               console.error("Booking failed:", error);
 
@@ -1186,7 +651,6 @@ $("teacherScheduleNext")?.addEventListener("click", () => {
 });
 
 // ============================================================
-// ============================================================
 // LESSONS LIVE SYNC
 // ============================================================
 
@@ -1194,7 +658,8 @@ let lessonsListenerStarted = false;
 
 function startLessonsListener() {
   const role = sessionStorage.getItem("prolingo_role");
-const userId = auth.currentUser?.uid;
+  const userId = auth.currentUser?.uid;
+
   if (lessonsListenerStarted) return;
 
   lessonsListenerStarted = true;
@@ -1209,23 +674,22 @@ const userId = auth.currentUser?.uid;
         const data = docSnap.data();
 
         // Student/child should only see their own bookings
-if (role === "student") {
+        if (role === "student") {
+          if (data.type !== "booking") {
+            return;
+          }
 
-    if (data.type !== "booking") {
-        return;
-    }
-
-    if (data.studentId !== userId) {
-        return;
-    }
-}
+          if (data.studentId !== userId) {
+            return;
+          }
+        }
 
         // Teacher should only see their own lessons
         if (role === "teacher") {
-  if (data.teacherId && data.teacherId !== userId) {
-    return;
-  }
-}
+          if (data.teacherId && data.teacherId !== userId) {
+            return;
+          }
+        }
 
         const bookingDate =
           data.date ||
@@ -1324,6 +788,7 @@ function startAvailabilityListener() {
     }
   );
 }
+
 // ============================================================
 // TEACHERS — LOAD TEACHER PROFILES
 // ============================================================
@@ -1394,19 +859,19 @@ function renderTeachers() {
     button.textContent = "View availability";
 
     button.addEventListener("click", () => {
-  selectedTeacherId = teacher.authUid;
+      selectedTeacherId = teacher.authUid;
 
-  if (!selectedTeacherId) {
-    alert("This teacher is missing their Firebase Auth UID.");
-    console.error("Missing authUid for teacher:", teacher);
-    return;
-  }
+      if (!selectedTeacherId) {
+        alert("This teacher is missing their Firebase Auth UID.");
+        console.error("Missing authUid for teacher:", teacher);
+        return;
+      }
 
-  selectedTeacherName = teacher.name || "Teacher";
+      selectedTeacherName = teacher.name || "Teacher";
 
-  showView("teacherSchedule");
-buildTeacherSchedule();
-});
+      showView("teacherSchedule");
+      buildTeacherSchedule();
+    });
 
     content.append(
       name,
@@ -1419,7 +884,6 @@ buildTeacherSchedule();
     card.append(photo, content);
     teacherGrid.appendChild(card);
   });
-  
 }
 
 function startTeachersListener() {
@@ -1463,7 +927,6 @@ function startTeachersListener() {
   );
 }
 
-// ============================================================
 // ============================================================
 // ADMIN / TEACHER — PUBLISH AVAILABILITY
 // ============================================================
@@ -1530,15 +993,15 @@ if (updateCalendarBtn) {
 
     try {
       await addDoc(collection(db, "availability"), {
-  teacherId: currentUser.uid,
-  teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
-  date,
-  day,
-  slot,
-  type: "availability",
-  status: "available",
-  createdAt: Date.now()
-});
+        teacherId: currentUser.uid,
+        teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
+        date,
+        day,
+        slot,
+        type: "availability",
+        status: "available",
+        createdAt: Date.now()
+      });
       alert("Availability published successfully.");
     } catch (error) {
       console.error("Unable to publish availability:", error);
@@ -1965,8 +1428,8 @@ onAuthStateChanged(auth, (user) => {
     console.log("Role:", role);
 
     startLessonsListener();
-startAvailabilityListener();
-startTeachersListener();
+    startAvailabilityListener();
+    startTeachersListener();
   } else {
     console.log("No signed-in user.");
   }
