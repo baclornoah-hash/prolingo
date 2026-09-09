@@ -432,25 +432,141 @@ if (role === "student") {
 
   const visibleBookings = bookings.filter((booking) =>
     weekDays.some(
-      (date) => getDateKey(date) === booking.date
-    )
-  );
+function buildCalendar() {
+  const tbody = $("calBody");
 
-  const role = sessionStorage.getItem("prolingo_role");
+  if (!tbody) return;
 
-const visibleAvailability =
-  role === "student"
-    ? []
-    : availability.filter(
+  tbody.replaceChildren();
+
+  const weekDays = getWeekDays();
+
+  timeSlots.forEach((time, rowIndex) => {
+    const tr = document.createElement("tr");
+
+    const timeTd = document.createElement("td");
+    timeTd.className = "time-cell";
+
+    const end = timeSlots[rowIndex + 1] || "12:30";
+    timeTd.textContent = `${time}–${end}`;
+
+    tr.appendChild(timeTd);
+
+    weekDays.forEach((date) => {
+      const td = document.createElement("td");
+      const dateKey = getDateKey(date);
+
+      const bookingMatches = bookings.filter(
+        (booking) =>
+          booking.date === dateKey &&
+          booking.slot === rowIndex
+      );
+
+      const availabilityMatches = availability.filter(
         (slot) =>
-          weekDays.some(
-            (date) => getDateKey(date) === slot.date
-          ) &&
+          slot.date === dateKey &&
+          slot.slot === rowIndex &&
           (
             !selectedTeacherId ||
             slot.teacherId === selectedTeacherId
           )
       );
+
+      bookingMatches.forEach((match) => {
+        const slot = document.createElement("div");
+
+        slot.className = `slot slot--${match.type || "booked"}`;
+        slot.textContent = match.label || "Booked";
+
+        td.appendChild(slot);
+      });
+
+      availabilityMatches.forEach((match) => {
+        const slot = document.createElement("button");
+
+        slot.type = "button";
+        slot.className = "slot slot--available";
+        slot.textContent = match.label || "Open";
+
+        const role = sessionStorage.getItem("prolingo_role");
+
+        if (role === "student") {
+          slot.style.cursor = "pointer";
+
+          slot.addEventListener("click", async () => {
+            if (!currentUser) {
+              alert("You must be signed in to book a lesson.");
+              return;
+            }
+
+            if (bookingMatches.length > 0) {
+              alert("This schedule has already been booked.");
+              return;
+            }
+
+            const confirmed = confirm(
+              `Book this lesson on ${dateKey} at ${time}?`
+            );
+
+            if (!confirmed) return;
+
+            slot.disabled = true;
+            slot.textContent = "Booking...";
+
+            try {
+              await addDoc(collection(db, "lessons"), {
+                type: "booking",
+                teacherId: match.teacherId || null,
+                studentId: currentUser.uid,
+                studentName:
+                  sessionStorage.getItem("prolingo_name") || "Student",
+                date: dateKey,
+                day: dateKey,
+                slot: rowIndex,
+                status: "scheduled",
+                createdAt: Date.now()
+              });
+
+              alert("Lesson booked successfully!");
+
+            } catch (error) {
+              console.error("Booking failed:", error);
+
+              slot.disabled = false;
+              slot.textContent = match.label || "Open";
+
+              alert(
+                "Booking failed. Please check your Firestore permissions."
+              );
+            }
+          });
+        }
+
+        td.appendChild(slot);
+      });
+
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+
+  const visibleBookings = bookings.filter((booking) =>
+    weekDays.some(
+      (date) => getDateKey(date) === booking.date
+    )
+  );
+
+  const visibleAvailability = availability.filter(
+    (slot) =>
+      weekDays.some(
+        (date) => getDateKey(date) === slot.date
+      ) &&
+      (
+        !selectedTeacherId ||
+        slot.teacherId === selectedTeacherId
+      )
+  );
 
   showElement(
     "calEmpty",
@@ -568,34 +684,143 @@ function buildTeacherSchedule() {
         await addDoc(collection(db, "lessons"), {
           type: "booking",
           teacherId: selectedTeacherId,
-          teacherName: selectedTeacherName || "Teacher",
-          studentId: currentUser.uid,
-          studentName:
-            sessionStorage.getItem("prolingo_name") || "Student",
-          date: dateKey,
-          day: dateKey,
-          slot: rowIndex,
-          status: "scheduled",
-          createdAt: Date.now()
-        });
+function buildTeacherSchedule() {
+  const tbody = $("teacherScheduleBody");
 
-        alert("Lesson booked successfully!");
+  if (!tbody) return;
 
-      } catch (error) {
-        console.error("Booking failed:", error);
+  tbody.replaceChildren();
 
-        slot.disabled = false;
-        slot.textContent = availableSlot.label || "Open";
+  const weekDays = getWeekDays();
 
-        alert(
-          "Booking failed. Please check your Firestore permissions."
-        );
+  setText(
+    "teacherScheduleTitle",
+    selectedTeacherName
+      ? `${selectedTeacherName}’s Schedule`
+      : "Teacher’s Schedule"
+  );
+
+  setText(
+    "teacherScheduleSubtitle",
+    selectedTeacherName
+      ? `View ${selectedTeacherName}’s open and booked lessons.`
+      : "View this teacher’s open and booked lessons."
+  );
+
+  setText("teacherScheduleRange", formatRange());
+
+  document
+    .querySelectorAll("[data-teacher-schedule-day]")
+    .forEach((element, index) => {
+      if (weekDays[index]) {
+        element.textContent = formatDay(weekDays[index]);
       }
     });
-  }
 
-  td.appendChild(slot);
-});
+  timeSlots.forEach((time, rowIndex) => {
+    const tr = document.createElement("tr");
+
+    const timeTd = document.createElement("td");
+    timeTd.className = "time-cell";
+
+    const end = timeSlots[rowIndex + 1] || "12:30";
+    timeTd.textContent = `${time}–${end}`;
+
+    tr.appendChild(timeTd);
+
+    weekDays.forEach((date) => {
+      const td = document.createElement("td");
+      const dateKey = getDateKey(date);
+
+      const teacherBookings = bookings.filter(
+        (booking) =>
+          booking.teacherId === selectedTeacherId &&
+          booking.date === dateKey &&
+          booking.slot === rowIndex
+      );
+
+      const teacherAvailability = availability.filter(
+        (slot) =>
+          slot.teacherId === selectedTeacherId &&
+          slot.date === dateKey &&
+          slot.slot === rowIndex
+      );
+
+      teacherBookings.forEach((booking) => {
+        const slot = document.createElement("div");
+
+        slot.className = `slot slot--${booking.type || "booked"}`;
+        slot.textContent = booking.label || "Booked";
+
+        td.appendChild(slot);
+      });
+
+      teacherAvailability.forEach((availableSlot) => {
+        const role = sessionStorage.getItem("prolingo_role");
+
+        const slot = document.createElement("button");
+
+        slot.type = "button";
+        slot.className = "slot slot--available";
+        slot.textContent = availableSlot.label || "Open";
+
+        if (role === "student") {
+          slot.style.cursor = "pointer";
+
+          slot.addEventListener("click", async () => {
+            if (!currentUser) {
+              alert("You must be signed in to book a lesson.");
+              return;
+            }
+
+            if (teacherBookings.length > 0) {
+              alert("This schedule has already been booked.");
+              return;
+            }
+
+            const confirmed = confirm(
+              `Book ${selectedTeacherName}'s lesson on ${dateKey} at ${time}?`
+            );
+
+            if (!confirmed) return;
+
+            slot.disabled = true;
+            slot.textContent = "Booking...";
+
+            try {
+              await addDoc(collection(db, "lessons"), {
+                type: "booking",
+                teacherId: selectedTeacherId,
+                teacherName:
+                  selectedTeacherName || "Teacher",
+                studentId: currentUser.uid,
+                studentName:
+                  sessionStorage.getItem("prolingo_name") || "Student",
+                date: dateKey,
+                day: dateKey,
+                slot: rowIndex,
+                status: "scheduled",
+                createdAt: Date.now()
+              });
+
+              alert("Lesson booked successfully!");
+
+            } catch (error) {
+              console.error("Booking failed:", error);
+
+              slot.disabled = false;
+              slot.textContent =
+                availableSlot.label || "Open";
+
+              alert(
+                "Booking failed. Please check your Firestore permissions."
+              );
+            }
+          });
+        }
+
+        td.appendChild(slot);
+      });
 
       tr.appendChild(td);
     });
@@ -606,13 +831,17 @@ function buildTeacherSchedule() {
   const visibleBookings = bookings.filter(
     (booking) =>
       booking.teacherId === selectedTeacherId &&
-      weekDays.some((date) => getDateKey(date) === booking.date)
+      weekDays.some(
+        (date) => getDateKey(date) === booking.date
+      )
   );
 
   const visibleAvailability = availability.filter(
     (slot) =>
       slot.teacherId === selectedTeacherId &&
-      weekDays.some((date) => getDateKey(date) === slot.date)
+      weekDays.some(
+        (date) => getDateKey(date) === slot.date
+      )
   );
 
   showElement(
