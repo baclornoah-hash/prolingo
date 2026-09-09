@@ -439,17 +439,19 @@ const availabilityMatches =
     )
   );
 
-  const visibleAvailability = availability.filter(
-    (slot) =>
-      weekDays.some(
-        (date) => getDateKey(date) === slot.date
-      ) &&
-      (
-        !selectedTeacherId ||
-        slot.teacherId === selectedTeacherId
-      )
-  );
+  const role = sessionStorage.getItem("prolingo_role");
 
+const visibleAvailability =
+  role === "teacher"
+    ? availability.filter(
+        (slot) =>
+          slot.teacherId === currentUser?.uid &&
+          weekDays.some(
+            (date) => getDateKey(date) === slot.date
+          )
+      )
+    : [];
+  
   showElement(
     "calEmpty",
     visibleBookings.length === 0 &&
