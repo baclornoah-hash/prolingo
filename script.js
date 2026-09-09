@@ -536,8 +536,8 @@ function buildTeacherSchedule() {
       teacherAvailability.forEach((availableSlot) => {
   const role = sessionStorage.getItem("prolingo_role");
 
-  const slot = document.createElement(
-    role === "student" ? "button" : "div"
+  const slot = document.createElement("button");
+slot.type = "button";"
   );
 
   if (role === "student") {
