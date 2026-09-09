@@ -96,6 +96,8 @@ function showView(name) {
 
   const targetView = $(viewId);
 
+  alert("Dashboard test: " + name);
+
   if (!targetView || !views[name]) {
     console.error(`View not found: view-${name}`);
     return;
