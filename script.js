@@ -424,7 +424,7 @@ function buildCalendar() {
       visibleAvailability.length === 0
   );
 
-  updateCalendarHeader();ss
+  updateCalendarHeader();
         
 function buildTeacherSchedule() {
   const tbody = $("teacherScheduleBody");
@@ -612,6 +612,7 @@ function buildTeacherSchedule() {
     teacherBookings.length === 0 &&
       teacherAvailability.length === 0
   );
+}
 
 $("calPrev")?.addEventListener("click", () => {
   currentWeekStart.setDate(currentWeekStart.getDate() - 7);
