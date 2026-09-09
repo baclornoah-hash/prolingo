@@ -309,10 +309,6 @@ function updateCalendarHeader() {
   });
 }
 
-// ------------------------------------------------------------
-// buildCalendar — was duplicated (one copy pasted inside the
-// other's catch block). Single clean definition now.
-// ------------------------------------------------------------
 function buildCalendar() {
   const tbody = $("calBody");
 
@@ -321,6 +317,17 @@ function buildCalendar() {
   tbody.replaceChildren();
 
   const weekDays = getWeekDays();
+  const role = sessionStorage.getItem("prolingo_role");
+
+  weekDays.forEach((date, index) => {
+    const header = document.querySelectorAll("[data-calendar-day]")[index];
+
+    if (header) {
+      header.textContent = date.toLocaleDateString("en-US", {
+        weekday: "short"
+      });
+    }
+  });
 
   timeSlots.forEach((time, rowIndex) => {
     const tr = document.createElement("tr");
@@ -337,23 +344,15 @@ function buildCalendar() {
       const td = document.createElement("td");
       const dateKey = getDateKey(date);
 
+      // ============================================================
+      // GENERAL CALENDAR BOOKINGS
+      // ============================================================
+
       const bookingMatches = bookings.filter(
         (booking) =>
           booking.date === dateKey &&
           booking.slot === rowIndex
       );
-
-      const role = sessionStorage.getItem("prolingo_role");
-
-const availabilityMatches =
-  role === "teacher"
-    ? availability.filter(
-        (slot) =>
-          slot.date === dateKey &&
-          slot.slot === rowIndex &&
-          slot.teacherId === currentUser?.uid
-      )
-    : [];
 
       bookingMatches.forEach((match) => {
         const slot = document.createElement("div");
@@ -364,68 +363,32 @@ const availabilityMatches =
         td.appendChild(slot);
       });
 
-      availabilityMatches.forEach((match) => {
-        const slot = document.createElement("button");
+      // ============================================================
+      // GENERAL CALENDAR AVAILABILITY
+      //
+      // ONLY THE TEACHER'S OWN AVAILABILITY BELONGS HERE.
+      //
+      // STUDENTS NEVER SEE AVAILABILITY IN THE GENERAL CALENDAR.
+      // selectedTeacherId IS NOT USED HERE.
+      // ============================================================
 
-        slot.type = "button";
-        slot.className = "slot slot--available";
-        slot.textContent = match.label || "Open";
+      if (role === "teacher") {
+        const ownAvailability = availability.filter(
+          (slot) =>
+            slot.date === dateKey &&
+            slot.slot === rowIndex &&
+            slot.teacherId === currentUser?.uid
+        );
 
-        const role = sessionStorage.getItem("prolingo_role");
+        ownAvailability.forEach((match) => {
+          const slot = document.createElement("div");
 
-        if (role === "student") {
-          slot.style.cursor = "pointer";
+          slot.className = "slot slot--available";
+          slot.textContent = match.label || "Open";
 
-          slot.addEventListener("click", async () => {
-            if (!currentUser) {
-              alert("You must be signed in to book a lesson.");
-              return;
-            }
-
-            if (bookingMatches.length > 0) {
-              alert("This schedule has already been booked.");
-              return;
-            }
-
-            const confirmed = confirm(
-              `Book this lesson on ${dateKey} at ${time}?`
-            );
-
-            if (!confirmed) return;
-
-            slot.disabled = true;
-            slot.textContent = "Booking...";
-
-            try {
-              await addDoc(collection(db, "lessons"), {
-                type: "booking",
-                teacherId: match.teacherId || null,
-                studentId: currentUser.uid,
-                studentName:
-                  sessionStorage.getItem("prolingo_name") || "Student",
-                date: dateKey,
-                day: dateKey,
-                slot: rowIndex,
-                status: "scheduled",
-                createdAt: Date.now()
-              });
-
-              alert("Lesson booked successfully!");
-            } catch (error) {
-              console.error("Booking failed:", error);
-
-              slot.disabled = false;
-              slot.textContent = match.label || "Open";
-
-              alert(
-                "Booking failed. Please check your Firestore permissions."
-              );
-            }
-          });
-        }
-
-        td.appendChild(slot);
-      });
+          td.appendChild(slot);
+        });
+      }
 
       tr.appendChild(td);
     });
@@ -433,39 +396,37 @@ const availabilityMatches =
     tbody.appendChild(tr);
   });
 
+  // ============================================================
+  // GENERAL CALENDAR EMPTY STATE
+  // ============================================================
+
   const visibleBookings = bookings.filter((booking) =>
     weekDays.some(
       (date) => getDateKey(date) === booking.date
     )
   );
 
-  const role = sessionStorage.getItem("prolingo_role");
+  let visibleAvailability = [];
 
-const visibleAvailability =
-  role === "teacher"
-    ? availability.filter(
-        (slot) =>
-          slot.teacherId === currentUser?.uid &&
-          weekDays.some(
-            (date) => getDateKey(date) === slot.date
-          )
-      )
-    : [];
-  
+  if (role === "teacher") {
+    visibleAvailability = availability.filter(
+      (slot) =>
+        slot.teacherId === currentUser?.uid &&
+        weekDays.some(
+          (date) => getDateKey(date) === slot.date
+        )
+    );
+  }
+
   showElement(
     "calEmpty",
     visibleBookings.length === 0 &&
       visibleAvailability.length === 0
   );
 
-  updateCalendarHeader();
-}
+  updateCalen
+        
 
-// ------------------------------------------------------------
-// buildTeacherSchedule — this one was duplicated FOUR times in
-// the pasted file, and the third copy was broken mid-statement.
-// Single clean definition now.
-// ------------------------------------------------------------
 function buildTeacherSchedule() {
   const tbody = $("teacherScheduleBody");
 
