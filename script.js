@@ -426,7 +426,6 @@ function buildCalendar() {
 
   updateCalen
         
-
 function buildTeacherSchedule() {
   const tbody = $("teacherScheduleBody");
 
@@ -434,31 +433,57 @@ function buildTeacherSchedule() {
 
   tbody.replaceChildren();
 
-  const weekDays = getWeekDays();
+  // ------------------------------------------------------------
+  // The Teacher Schedule must ALWAYS use the selected teacher.
+  // It must NEVER use the logged-in user's teacher ID.
+  // ------------------------------------------------------------
+
+  if (!selectedTeacherId) {
+    setText("teacherScheduleTitle", "Teacher's Schedule");
+    setText(
+      "teacherScheduleSubtitle",
+      "Select a teacher to view their schedule."
+    );
+
+    showElement("teacherScheduleEmpty", true);
+    return;
+  }
 
   setText(
     "teacherScheduleTitle",
-    selectedTeacherName
-      ? `${selectedTeacherName}’s Schedule`
-      : "Teacher’s Schedule"
+    `${selectedTeacherName || "Teacher"}'s Schedule`
   );
 
   setText(
     "teacherScheduleSubtitle",
-    selectedTeacherName
-      ? `View ${selectedTeacherName}’s open and booked lessons.`
-      : "View this teacher’s open and booked lessons."
+    `View ${selectedTeacherName || "this teacher"}'s open and booked lessons.`
   );
 
-  setText("teacherScheduleRange", formatRange());
+  const weekDays = getWeekDays();
 
-  document
-    .querySelectorAll("[data-teacher-schedule-day]")
-    .forEach((element, index) => {
-      if (weekDays[index]) {
-        element.textContent = formatDay(weekDays[index]);
-      }
-    });
+  // ------------------------------------------------------------
+  // ONLY DATA BELONGING TO THIS SELECTED TEACHER
+  // ------------------------------------------------------------
+
+  const teacherBookings = bookings.filter(
+    (booking) =>
+      booking.teacherId === selectedTeacherId &&
+      weekDays.some(
+        (date) => getDateKey(date) === booking.date
+      )
+  );
+
+  const teacherAvailability = availability.filter(
+    (slot) =>
+      slot.teacherId === selectedTeacherId &&
+      weekDays.some(
+        (date) => getDateKey(date) === slot.date
+      )
+  );
+
+  // ------------------------------------------------------------
+  // BUILD CALENDAR
+  // ------------------------------------------------------------
 
   timeSlots.forEach((time, rowIndex) => {
     const tr = document.createElement("tr");
@@ -475,37 +500,48 @@ function buildTeacherSchedule() {
       const td = document.createElement("td");
       const dateKey = getDateKey(date);
 
-      const teacherBookings = bookings.filter(
+      // ----------------------------------------------------------
+      // BOOKINGS FOR SELECTED TEACHER ONLY
+      // ----------------------------------------------------------
+
+      const bookingMatches = teacherBookings.filter(
         (booking) =>
-          booking.teacherId === selectedTeacherId &&
           booking.date === dateKey &&
           booking.slot === rowIndex
       );
 
-      const teacherAvailability = availability.filter(
-        (slot) =>
-          slot.teacherId === selectedTeacherId &&
-          slot.date === dateKey &&
-          slot.slot === rowIndex
-      );
-
-      teacherBookings.forEach((booking) => {
+      bookingMatches.forEach((match) => {
         const slot = document.createElement("div");
 
-        slot.className = `slot slot--${booking.type || "booked"}`;
-        slot.textContent = booking.label || "Booked";
+        slot.className = `slot slot--${match.type || "booked"}`;
+        slot.textContent = match.label || "Booked";
 
         td.appendChild(slot);
       });
 
-      teacherAvailability.forEach((availableSlot) => {
-        const role = sessionStorage.getItem("prolingo_role");
+      // ----------------------------------------------------------
+      // AVAILABILITY FOR SELECTED TEACHER ONLY
+      // ----------------------------------------------------------
+
+      const availabilityMatches = teacherAvailability.filter(
+        (slot) =>
+          slot.date === dateKey &&
+          slot.slot === rowIndex
+      );
+
+      availabilityMatches.forEach((match) => {
+        // Don't show an available slot if it is already booked.
+        const alreadyBooked = bookingMatches.length > 0;
+
+        if (alreadyBooked) return;
 
         const slot = document.createElement("button");
 
         slot.type = "button";
         slot.className = "slot slot--available";
-        slot.textContent = availableSlot.label || "Open";
+        slot.textContent = match.label || "Open";
+
+        const role = sessionStorage.getItem("prolingo_role");
 
         if (role === "student") {
           slot.style.cursor = "pointer";
@@ -516,13 +552,13 @@ function buildTeacherSchedule() {
               return;
             }
 
-            if (teacherBookings.length > 0) {
+            if (bookingMatches.length > 0) {
               alert("This schedule has already been booked.");
               return;
             }
 
             const confirmed = confirm(
-              `Book ${selectedTeacherName}'s lesson on ${dateKey} at ${time}?`
+              `Book this lesson on ${dateKey} at ${time}?`
             );
 
             if (!confirmed) return;
@@ -534,8 +570,6 @@ function buildTeacherSchedule() {
               await addDoc(collection(db, "lessons"), {
                 type: "booking",
                 teacherId: selectedTeacherId,
-                teacherName:
-                  selectedTeacherName || "Teacher",
                 studentId: currentUser.uid,
                 studentName:
                   sessionStorage.getItem("prolingo_name") || "Student",
@@ -551,8 +585,7 @@ function buildTeacherSchedule() {
               console.error("Booking failed:", error);
 
               slot.disabled = false;
-              slot.textContent =
-                availableSlot.label || "Open";
+              slot.textContent = match.label || "Open";
 
               alert(
                 "Booking failed. Please check your Firestore permissions."
@@ -570,27 +603,17 @@ function buildTeacherSchedule() {
     tbody.appendChild(tr);
   });
 
-  const visibleBookings = bookings.filter(
-    (booking) =>
-      booking.teacherId === selectedTeacherId &&
-      weekDays.some(
-        (date) => getDateKey(date) === booking.date
-      )
-  );
-
-  const visibleAvailability = availability.filter(
-    (slot) =>
-      slot.teacherId === selectedTeacherId &&
-      weekDays.some(
-        (date) => getDateKey(date) === slot.date
-      )
-  );
+  // ------------------------------------------------------------
+  // EMPTY STATE
+  // ------------------------------------------------------------
 
   showElement(
     "teacherScheduleEmpty",
-    visibleBookings.length === 0 &&
-      visibleAvailability.length === 0
+    teacherBookings.length === 0 &&
+      teacherAvailability.length === 0
   );
+
+  updateTeacherScheduleHeader();
 }
 
 $("calPrev")?.addEventListener("click", () => {
