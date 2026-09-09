@@ -527,6 +527,8 @@ $("teacherScheduleNext")?.addEventListener("click", () => {
 let lessonsListenerStarted = false;
 
 function startLessonsListener() {
+  const role = sessionStorage.getItem("prolingo_role");
+const userId = auth.currentUser?.uid;
   if (lessonsListenerStarted) return;
 
   lessonsListenerStarted = true;
@@ -539,6 +541,18 @@ function startLessonsListener() {
 
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
+
+        // Student/child should only see their own bookings
+if (role === "student") {
+
+    if (data.type !== "booking") {
+        return;
+    }
+
+    if (data.studentId !== userId) {
+        return;
+    }
+}
 
         const bookingDate =
           data.date ||
@@ -845,13 +859,19 @@ if (updateCalendarBtn) {
       await addDoc(collection(db, "availability"), {
         teacherId: currentUser.uid,
         date,
-        day,
-        slot,
-        label: "Open",
-        status: "available",
-        createdAt: Date.now()
-      });
+        {
+    day: Number(dayInput),
+    slot: Number(slotInput),
 
+    type: "availability",
+
+    teacherId: auth.currentUser.uid,
+    teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
+
+    status: "available",
+
+    createdAt: Date.now()
+}
       alert("Availability published successfully.");
     } catch (error) {
       console.error("Unable to publish availability:", error);
