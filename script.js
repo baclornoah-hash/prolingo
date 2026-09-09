@@ -531,13 +531,74 @@ function buildTeacherSchedule() {
       });
 
       teacherAvailability.forEach((availableSlot) => {
-        const slot = document.createElement("div");
+  const role = sessionStorage.getItem("prolingo_role");
 
-        slot.className = "slot slot--available";
+  const slot = document.createElement(
+    role === "student" ? "button" : "div"
+  );
+
+  if (role === "student") {
+    slot.type = "button";
+  }
+
+  slot.className = "slot slot--available";
+  slot.textContent = availableSlot.label || "Open";
+
+  if (role === "student") {
+    slot.style.cursor = "pointer";
+
+    slot.addEventListener("click", async () => {
+      if (!currentUser) {
+        alert("You must be signed in to book a lesson.");
+        return;
+      }
+
+      if (teacherBookings.length > 0) {
+        alert("This schedule has already been booked.");
+        return;
+      }
+
+      const confirmed = confirm(
+        `Book ${selectedTeacherName}'s lesson on ${dateKey} at ${time}?`
+      );
+
+      if (!confirmed) return;
+
+      slot.disabled = true;
+      slot.textContent = "Booking...";
+
+      try {
+        await addDoc(collection(db, "lessons"), {
+          type: "booking",
+          teacherId: selectedTeacherId,
+          teacherName: selectedTeacherName || "Teacher",
+          studentId: currentUser.uid,
+          studentName:
+            sessionStorage.getItem("prolingo_name") || "Student",
+          date: dateKey,
+          day: dateKey,
+          slot: rowIndex,
+          status: "scheduled",
+          createdAt: Date.now()
+        });
+
+        alert("Lesson booked successfully!");
+
+      } catch (error) {
+        console.error("Booking failed:", error);
+
+        slot.disabled = false;
         slot.textContent = availableSlot.label || "Open";
 
-        td.appendChild(slot);
-      });
+        alert(
+          "Booking failed. Please check your Firestore permissions."
+        );
+      }
+    });
+  }
+
+  td.appendChild(slot);
+});
 
       tr.appendChild(td);
     });
