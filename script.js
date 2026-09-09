@@ -367,8 +367,11 @@ function buildCalendar() {
 
   const role = sessionStorage.getItem("prolingo_role");
 
-  if (role === "student") {
-    slot.style.cursor = "pointer";
+if (role === "student") {
+  slot.style.cursor = "pointer";
+
+  slot.addEventListener("click", async () => {
+    alert("GREEN SLOT CLICKED");
 
     slot.addEventListener("click", async () => {
       if (!currentUser) {
