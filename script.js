@@ -424,7 +424,7 @@ function buildCalendar() {
       visibleAvailability.length === 0
   );
 
-  updateCalen
+  updateCalendarHeader();ss
         
 function buildTeacherSchedule() {
   const tbody = $("teacherScheduleBody");
