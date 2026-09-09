@@ -536,12 +536,7 @@ function buildTeacherSchedule() {
   const role = sessionStorage.getItem("prolingo_role");
 
   const slot = document.createElement("button");
-slot.type = "button";"
-  );
-
-  if (role === "student") {
-    slot.type = "button";
-  }
+  slot.type = "button";
 
   slot.className = "slot slot--available";
   slot.textContent = availableSlot.label || "Open";
