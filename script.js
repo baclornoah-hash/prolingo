@@ -613,9 +613,6 @@ function buildTeacherSchedule() {
       teacherAvailability.length === 0
   );
 
-  updateTeacherScheduleHeader();
-}
-
 $("calPrev")?.addEventListener("click", () => {
   currentWeekStart.setDate(currentWeekStart.getDate() - 7);
   buildCalendar();
