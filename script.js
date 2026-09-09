@@ -55,13 +55,14 @@ function escapeHtml(value) {
 // VIEW SWITCHING
 // ============================================================
 
-calendar: {
-  title: "Calendar",
-  subtitle:
-    window.prolingoRole === "student"
-      ? "View your upcoming lessons."
-      : "Manage teacher availability and bookings."
-},
+const views = {
+  calendar: {
+    title: "Calendar",
+    subtitle:
+      window.prolingoRole === "student"
+        ? "View your upcoming lessons."
+        : "Manage teacher availability and bookings."
+  },
 
   teachers: {
     title: "Teachers",
