@@ -25,6 +25,18 @@ function setText(id, value) {
   if (element) element.textContent = value;
 }
 
+function updateCalendarForRole() {
+  const role = sessionStorage.getItem("prolingo_role");
+
+  if (role === "student") {
+    setText("viewSubtitle", "View your upcoming lessons.");
+    setText("calEmpty", "You have no lessons scheduled yet.");
+  } else {
+    setText("viewSubtitle", "Manage teacher availability and bookings.");
+    setText("calEmpty", "No time slots published yet.");
+  }
+}
+
 function showElement(id, visible) {
   const element = $(id);
   if (element) element.style.display = visible ? "" : "none";
@@ -43,16 +55,13 @@ function escapeHtml(value) {
 // VIEW SWITCHING
 // ============================================================
 
-const views = {
-  dashboard: {
-    title: "Dashboard",
-    subtitle: "Where today's lessons begin."
-  },
-
-  calendar: {
-    title: "Calendar",
-    subtitle: "Publish time, manage bookings."
-  },
+calendar: {
+  title: "Calendar",
+  subtitle:
+    window.prolingoRole === "student"
+      ? "View your upcoming lessons."
+      : "Manage teacher availability and bookings."
+},
 
   teachers: {
     title: "Teachers",
