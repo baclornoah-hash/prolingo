@@ -331,9 +331,6 @@ function buildCalendar() {
 
     weekDays.forEach((date) => {
       const td = document.createElement("td");
-      td.addEventListener("click", () => {
-  alert("CELL CLICKED");
-});
       const dateKey = getDateKey(date);
 
       const bookingMatches = bookings.filter(
@@ -374,7 +371,6 @@ if (role === "student") {
   slot.style.cursor = "pointer";
 
   slot.addEventListener("click", async () => {
-    alert("GREEN SLOT CLICKED");
 
     slot.addEventListener("click", async () => {
       if (!currentUser) {
