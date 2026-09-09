@@ -21,9 +21,11 @@ function redirectToLogin() {
 }
 
 function initializeAuthGuard() {
+  window.prolingoRole = sessionStorage.getItem("prolingo_role");
+  window.prolingoName = sessionStorage.getItem("prolingo_name");
+
   const role = sessionStorage.getItem("prolingo_role");
   const name = sessionStorage.getItem("prolingo_name");
-
   console.log("Stored role:", role);
   console.log("Stored name:", name);
 
