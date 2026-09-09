@@ -425,6 +425,10 @@ function buildCalendar() {
   );
   updateCalendarHeader();
 }
+
+// ============================================================
+// TEACHER SCHEDULE
+// ============================================================
         
 function buildTeacherSchedule() {
   const tbody = $("teacherScheduleBody");
