@@ -423,8 +423,8 @@ function buildCalendar() {
     visibleBookings.length === 0 &&
       visibleAvailability.length === 0
   );
-
   updateCalendarHeader();
+}
         
 function buildTeacherSchedule() {
   const tbody = $("teacherScheduleBody");
