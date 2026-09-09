@@ -343,15 +343,17 @@ function buildCalendar() {
           booking.slot === rowIndex
       );
 
-      const availabilityMatches = availability.filter(
+      const role = sessionStorage.getItem("prolingo_role");
+
+const availabilityMatches =
+  role === "teacher"
+    ? availability.filter(
         (slot) =>
           slot.date === dateKey &&
           slot.slot === rowIndex &&
-          (
-            !selectedTeacherId ||
-            slot.teacherId === selectedTeacherId
-          )
-      );
+          slot.teacherId === currentUser?.uid
+      )
+    : [];
 
       bookingMatches.forEach((match) => {
         const slot = document.createElement("div");
