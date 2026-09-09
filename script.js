@@ -554,6 +554,13 @@ if (role === "student") {
     }
 }
 
+        // Teacher should only see their own lessons
+        if (role === "teacher") {
+  if (data.teacherId && data.teacherId !== userId) {
+    return;
+  }
+}
+
         const bookingDate =
           data.date ||
           (typeof data.day === "string" ? data.day : null);
@@ -857,21 +864,15 @@ if (updateCalendarBtn) {
 
     try {
       await addDoc(collection(db, "availability"), {
-        teacherId: currentUser.uid,
-        date,
-        {
-    day: Number(dayInput),
-    slot: Number(slotInput),
-
-    type: "availability",
-
-    teacherId: auth.currentUser.uid,
-    teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
-
-    status: "available",
-
-    createdAt: Date.now()
-}
+  teacherId: currentUser.uid,
+  teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
+  date,
+  day,
+  slot,
+  type: "availability",
+  status: "available",
+  createdAt: Date.now()
+});
       alert("Availability published successfully.");
     } catch (error) {
       console.error("Unable to publish availability:", error);
