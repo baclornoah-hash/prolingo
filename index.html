@@ -126,20 +126,35 @@
           <p class="empty-state" id="lessonEmpty">No lessons published yet — head to Calendar to publish availability.</p>
         </div>
 
-        <div class="panel panel--upload" data-requires="uploadSlides">
+        <!--
+          Was data-requires="uploadSlides" — that value never matched
+          an actual account role ("teacher"/"admin"/"student"), so
+          this panel was invisible to everyone. data-requires now
+          takes a comma-separated list of roles.
+        -->
+        <div class="panel panel--upload" data-requires="teacher,admin">
           <div class="panel-head">
             <h2>Lesson upload</h2>
             <span class="tag-pill">Teacher / Admin</span>
           </div>
-          <p class="panel-copy">Drop a slide deck here — it becomes the shared lesson view every student sees in Classroom.</p>
+          <p class="panel-copy">Drop a slide deck or video here — it becomes the shared lesson material every student sees in Classroom.</p>
           <label class="dropzone" for="pptInput">
             <span class="dropzone-icon">⇪</span>
-            <span><strong>Upload lesson slides</strong><br>PPTX, PDF, or images</span>
-            <input type="file" id="pptInput" hidden>
+            <span><strong>Upload lesson slides or video</strong><br>PPTX, PDF, images, or MP4</span>
+            <input type="file" id="pptInput" accept=".pptx,.pdf,image/*,video/*" hidden>
           </label>
           <div class="dropzone-file" id="dropzoneFile"></div>
         </div>
 
+      </div>
+
+      <!-- Lesson materials — visible to every role, populated from Firebase Storage/Firestore -->
+      <div class="panel panel--materials" style="margin-top:20px;">
+        <div class="panel-head">
+          <h2>Lesson materials</h2>
+        </div>
+        <ul class="lesson-list" id="materialsList"></ul>
+        <p class="empty-state" id="materialsEmpty">No lesson materials uploaded yet.</p>
       </div>
     </section>
 
@@ -155,7 +170,7 @@
 
     <button
       class="solid-btn"
-      data-requires="manageTeachers"
+      data-requires="admin"
       id="addTeacherBtn"
     >
       Add teacher
@@ -192,7 +207,7 @@
   id="updateCalendarBtn"
   class="solid-btn"
   type="button"
-  data-requires="teacher"
+  data-requires="teacher,admin"
 >
   Update calendar
 </button>
@@ -313,16 +328,18 @@
   </button>
 </div>
             <div class="stage-timer">Starts in <strong id="stageTimer">--:--:--</strong></div>
-            <button class="start-btn" data-requires="uploadSlides">Start class</button>
+            <button class="start-btn" data-requires="teacher,admin">Start class</button>
           </div>
 
           <div class="slide-frame">
             <div class="slide-badge" id="slideBadge">No lesson loaded</div>
-            <div class="slide-art">
+            <div class="slide-art" id="slideArt">
               <h2 id="slideTitle">Waiting for a lesson</h2>
               <p id="slideBody">Once a teacher starts a class or uploads slides, they'll appear here for everyone in the room.</p>
             </div>
-            <div class="slide-controls" data-requires="uploadSlides">
+            <!-- Filled in by renderMaterialInStage() in script.js when a material exists -->
+            <div class="slide-media" id="slideMedia" style="display:none;"></div>
+            <div class="slide-controls" data-requires="teacher,admin">
               <button class="icon-btn">↺</button>
               <button class="icon-btn">‹</button>
               <span id="slideCounter">0 / 0</span>
