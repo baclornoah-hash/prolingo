@@ -47,10 +47,21 @@ function initializeAuthGuard() {
     userRoleElement.textContent = role;
   }
 
+  // ------------------------------------------------------------
+  // data-requires accepts a comma-separated list of roles, e.g.
+  // data-requires="teacher,admin". Previously this compared the
+  // whole attribute against the single role string, so values like
+  // "uploadSlides" or "manageTeachers" never matched "teacher" or
+  // "admin" and those elements stayed hidden for everyone. Split
+  // and check membership instead.
+  // ------------------------------------------------------------
   document.querySelectorAll("[data-requires]").forEach((element) => {
-    const requiredRole = element.dataset.requires;
+    const requiredRoles = element.dataset.requires
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
 
-    if (requiredRole !== role) {
+    if (!requiredRoles.includes(role)) {
       element.style.display = "none";
     }
   });
