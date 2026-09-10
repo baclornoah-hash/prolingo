@@ -2,7 +2,7 @@
 // FIREBASE
 // ============================================================
 
-import { auth, db } from "./firebase-config.js";
+import { auth, db, storage } from "./firebase-config.js";
 
 import {
   onAuthStateChanged
@@ -11,8 +11,18 @@ import {
 import {
   collection,
   addDoc,
-  onSnapshot
+  onSnapshot,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+import {
+  ref,
+  uploadBytesResumable,
+  getDownloadURL
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 // ============================================================
 // HELPERS
@@ -220,6 +230,253 @@ function renderLessons() {
     li.append(stamp, info, button);
     list.appendChild(li);
   });
+}
+
+// ============================================================
+// LESSON MATERIALS — UPLOAD (Firebase Storage + Firestore)
+//
+// Flow:
+//   teacher/admin picks a file in #pptInput
+//     -> uploaded to Storage at lessons/{teacherUid}/{timestamp}_{name}
+//     -> upload progress shown in #dropzoneFile
+//     -> on completion, download URL + metadata saved to the
+//        "lessonMaterials" Firestore collection
+//     -> the live listener below (startMaterialsListener) picks it
+//        up for every signed-in user, teacher or student
+// ============================================================
+
+const pptInput = $("pptInput");
+const dropzoneFile = $("dropzoneFile");
+
+function guessMaterialType(file) {
+  if (file.type.startsWith("video/")) return "video";
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type === "application/pdf") return "pdf";
+  return "file";
+}
+
+async function handleMaterialUpload(file) {
+  if (!currentUser) {
+    alert("Please sign in first.");
+    return;
+  }
+
+  const role = sessionStorage.getItem("prolingo_role");
+
+  if (role !== "teacher" && role !== "admin") {
+    alert("Only teachers or admins can upload lesson materials.");
+    return;
+  }
+
+  const materialType = guessMaterialType(file);
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  const storagePath = `lessons/${currentUser.uid}/${Date.now()}_${safeName}`;
+  const storageRef = ref(storage, storagePath);
+
+  const uploadTask = uploadBytesResumable(storageRef, file);
+
+  if (dropzoneFile) {
+    dropzoneFile.textContent = `Uploading ${file.name}… 0%`;
+  }
+
+  uploadTask.on(
+    "state_changed",
+    (snapshot) => {
+      const percent = Math.round(
+        (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+      );
+
+      if (dropzoneFile) {
+        dropzoneFile.textContent = `Uploading ${file.name}… ${percent}%`;
+      }
+    },
+    (error) => {
+      console.error("Lesson material upload failed:", error);
+
+      if (dropzoneFile) {
+        dropzoneFile.textContent = `Upload failed: ${error.message}`;
+      }
+
+      alert(
+        "Upload failed. Check that Firebase Storage is enabled for this project and that its rules allow this account to write to " +
+          storagePath
+      );
+    },
+    async () => {
+      try {
+        const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+
+        await addDoc(collection(db, "lessonMaterials"), {
+          teacherId: currentUser.uid,
+          teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
+          title: file.name,
+          fileType: materialType,
+          fileUrl: downloadUrl,
+          storagePath,
+          createdAt: Date.now()
+        });
+
+        if (dropzoneFile) {
+          dropzoneFile.textContent = `Uploaded: ${file.name}`;
+        }
+      } catch (error) {
+        console.error("Saving lesson material metadata failed:", error);
+
+        if (dropzoneFile) {
+          dropzoneFile.textContent = `Upload finished, but saving details failed: ${error.message}`;
+        }
+      }
+    }
+  );
+}
+
+if (pptInput) {
+  pptInput.addEventListener("change", () => {
+    const file = pptInput.files?.[0];
+
+    if (!file) return;
+
+    handleMaterialUpload(file);
+
+    // Reset so selecting the same file again still fires "change"
+    pptInput.value = "";
+  });
+}
+
+// ============================================================
+// LESSON MATERIALS — LIVE LIST (Firestore)
+//
+// Visible to every signed-in role. Renders into #materialsList
+// on the dashboard, and mirrors the most recent material into the
+// Classroom slide-frame via renderMaterialInStage().
+// ============================================================
+
+let materials = [];
+let materialsListenerStarted = false;
+
+function renderMaterialPreview(material) {
+  if (material.fileType === "video") {
+    const video = document.createElement("video");
+    video.src = material.fileUrl;
+    video.controls = true;
+    video.style.maxWidth = "220px";
+    video.style.borderRadius = "10px";
+    return video;
+  }
+
+  if (material.fileType === "image") {
+    const img = document.createElement("img");
+    img.src = material.fileUrl;
+    img.alt = material.title;
+    img.style.maxWidth = "220px";
+    img.style.borderRadius = "10px";
+    return img;
+  }
+
+  const link = document.createElement("a");
+  link.href = material.fileUrl;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = "Open file";
+  return link;
+}
+
+function renderMaterialsList() {
+  const list = $("materialsList");
+
+  if (!list) return;
+
+  list.replaceChildren();
+
+  if (materials.length === 0) {
+    showElement("materialsEmpty", true);
+    return;
+  }
+
+  showElement("materialsEmpty", false);
+
+  materials.forEach((material) => {
+    const li = document.createElement("li");
+    li.className = "lesson-row";
+
+    const info = document.createElement("div");
+    info.className = "lesson-info";
+
+    const title = document.createElement("strong");
+    title.textContent = material.title;
+
+    const details = document.createElement("span");
+    details.textContent = `${material.teacherName} · ${new Date(
+      material.createdAt
+    ).toLocaleString()}`;
+
+    info.append(title, details);
+
+    li.append(info, renderMaterialPreview(material));
+    list.appendChild(li);
+  });
+}
+
+function renderMaterialInStage() {
+  const slideMedia = $("slideMedia");
+  const slideArt = $("slideArt");
+
+  if (!slideMedia) return;
+
+  const latest = materials[0];
+
+  if (!latest) {
+    slideMedia.replaceChildren();
+    slideMedia.style.display = "none";
+    if (slideArt) slideArt.style.display = "";
+    return;
+  }
+
+  setText("slideBadge", "Lesson material");
+  setText("slideTitle", latest.title);
+  setText("slideBody", `Uploaded by ${latest.teacherName}`);
+
+  slideMedia.replaceChildren(renderMaterialPreview(latest));
+  slideMedia.style.display = "flex";
+}
+
+function startMaterialsListener() {
+  if (materialsListenerStarted) return;
+  materialsListenerStarted = true;
+
+  onSnapshot(
+    collection(db, "lessonMaterials"),
+    (snapshot) => {
+      materials = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        materials.push({
+          id: docSnap.id,
+          teacherId: data.teacherId || null,
+          teacherName: data.teacherName || "Teacher",
+          title: data.title || "Untitled material",
+          fileType: data.fileType || "file",
+          fileUrl: data.fileUrl || "",
+          createdAt: data.createdAt || 0
+        });
+      });
+
+      materials.sort((a, b) => b.createdAt - a.createdAt);
+
+      renderMaterialsList();
+      renderMaterialInStage();
+    },
+    (error) => {
+      console.error("Lesson materials listener error:", error);
+
+      setText(
+        "materialsEmpty",
+        "Unable to load lesson materials. Check your Firestore rules."
+      );
+    }
+  );
 }
 
 // ============================================================
@@ -1182,6 +1439,7 @@ async function startCamera() {
 
 function stopCamera() {
   stopMicVisualizer();
+  resetPeerConnection();
 
   if (localStream) {
     localStream.getTracks().forEach((track) => track.stop());
@@ -1263,6 +1521,264 @@ if (cameraToggle) {
       stopCamera();
     } else {
       await startCamera();
+    }
+  });
+}
+
+// ============================================================
+// CLASSROOM — WEBRTC (peer video/audio between two participants)
+//
+// Firestore is used purely as a signaling channel to exchange the
+// SDP offer/answer and ICE candidates — the actual audio/video never
+// touches Firestore, it flows peer-to-peer once negotiation is done:
+//
+//   rooms/{roomId}                          -> { offer, answer, createdBy, ... }
+//   rooms/{roomId}/callerCandidates/{auto}  -> ICE candidates from whoever created the room
+//   rooms/{roomId}/calleeCandidates/{auto}  -> ICE candidates from whoever joined it
+//
+// This supports one participant on each side of a room (a single
+// teacher/student pair). Whoever clicks "Create room" is the caller;
+// whoever enters that code and clicks "Join room" is the callee.
+// ============================================================
+
+const createRoomBtn = $("createRoomBtn");
+const joinRoomBtn = $("joinRoomBtn");
+const roomInput = $("roomInput");
+const remoteVideo = $("remoteVideo");
+
+const rtcConfig = {
+  iceServers: [
+    {
+      urls: [
+        "stun:stun1.l.google.com:19302",
+        "stun:stun2.l.google.com:19302"
+      ]
+    }
+  ]
+};
+
+let peerConnection = null;
+let remoteStream = null;
+let activeRoomId = null;
+let unsubscribeRoom = null;
+let unsubscribeCandidates = null;
+
+function setRemoteVisible(visible) {
+  if (remoteVideo) remoteVideo.classList.toggle("is-visible", visible);
+  showElement("remoteVideoPlaceholder", !visible);
+}
+
+function resetPeerConnection() {
+  if (unsubscribeRoom) {
+    unsubscribeRoom();
+    unsubscribeRoom = null;
+  }
+
+  if (unsubscribeCandidates) {
+    unsubscribeCandidates();
+    unsubscribeCandidates = null;
+  }
+
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+  }
+
+  remoteStream = null;
+  activeRoomId = null;
+
+  if (remoteVideo) remoteVideo.srcObject = null;
+  setRemoteVisible(false);
+}
+
+function createPeerConnection() {
+  const pc = new RTCPeerConnection(rtcConfig);
+
+  remoteStream = new MediaStream();
+  if (remoteVideo) remoteVideo.srcObject = remoteStream;
+
+  if (localStream) {
+    localStream.getTracks().forEach((track) => {
+      pc.addTrack(track, localStream);
+    });
+  }
+
+  pc.ontrack = (event) => {
+    event.streams[0].getTracks().forEach((track) => {
+      remoteStream.addTrack(track);
+    });
+    setRemoteVisible(true);
+  };
+
+  pc.onconnectionstatechange = () => {
+    console.log("WebRTC connection state:", pc.connectionState);
+
+    if (
+      pc.connectionState === "disconnected" ||
+      pc.connectionState === "failed" ||
+      pc.connectionState === "closed"
+    ) {
+      setRemoteVisible(false);
+    }
+  };
+
+  return pc;
+}
+
+async function ensureLocalStream() {
+  if (!localStream) {
+    await startCamera();
+  }
+
+  if (!localStream) {
+    throw new Error("Camera/microphone access is required to use the classroom.");
+  }
+}
+
+async function createRoom() {
+  if (!currentUser) {
+    alert("Please sign in first.");
+    return;
+  }
+
+  await ensureLocalStream();
+
+  resetPeerConnection();
+
+  const roomRef = doc(collection(db, "rooms"));
+  activeRoomId = roomRef.id;
+
+  const pc = createPeerConnection();
+  peerConnection = pc;
+
+  const callerCandidates = collection(roomRef, "callerCandidates");
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      addDoc(callerCandidates, event.candidate.toJSON());
+    }
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  await setDoc(roomRef, {
+    offer: { type: offer.type, sdp: offer.sdp },
+    createdBy: currentUser.uid,
+    createdByName: sessionStorage.getItem("prolingo_name") || "Host",
+    createdAt: Date.now()
+  });
+
+  setText("roomCode", activeRoomId);
+  if (roomInput) roomInput.value = activeRoomId;
+
+  unsubscribeRoom = onSnapshot(roomRef, async (snapshot) => {
+    const data = snapshot.data();
+
+    if (data?.answer && pc.signalingState !== "closed" && !pc.currentRemoteDescription) {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+    }
+  });
+
+  const calleeCandidates = collection(roomRef, "calleeCandidates");
+
+  unsubscribeCandidates = onSnapshot(calleeCandidates, (snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+      if (change.type === "added") {
+        pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+      }
+    });
+  });
+}
+
+async function joinRoom(roomId) {
+  if (!currentUser) {
+    alert("Please sign in first.");
+    return;
+  }
+
+  if (!roomId) {
+    alert("Enter a room code first.");
+    return;
+  }
+
+  const roomRef = doc(db, "rooms", roomId);
+  const roomSnap = await getDoc(roomRef);
+
+  if (!roomSnap.exists()) {
+    alert("No room found with that code.");
+    return;
+  }
+
+  await ensureLocalStream();
+
+  resetPeerConnection();
+  activeRoomId = roomId;
+
+  const pc = createPeerConnection();
+  peerConnection = pc;
+
+  const calleeCandidates = collection(roomRef, "calleeCandidates");
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      addDoc(calleeCandidates, event.candidate.toJSON());
+    }
+  };
+
+  const offer = roomSnap.data().offer;
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  await updateDoc(roomRef, {
+    answer: { type: answer.type, sdp: answer.sdp },
+    joinedBy: currentUser.uid,
+    joinedByName: sessionStorage.getItem("prolingo_name") || "Guest"
+  });
+
+  setText("roomCode", roomId);
+
+  const callerCandidates = collection(roomRef, "callerCandidates");
+
+  unsubscribeCandidates = onSnapshot(callerCandidates, (snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+      if (change.type === "added") {
+        pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+      }
+    });
+  });
+}
+
+if (createRoomBtn) {
+  createRoomBtn.addEventListener("click", async () => {
+    createRoomBtn.disabled = true;
+
+    try {
+      await createRoom();
+    } catch (error) {
+      console.error("Failed to create room:", error);
+      alert("Couldn't create the room: " + error.message);
+    } finally {
+      createRoomBtn.disabled = false;
+    }
+  });
+}
+
+if (joinRoomBtn) {
+  joinRoomBtn.addEventListener("click", async () => {
+    const roomId = roomInput?.value.trim();
+
+    joinRoomBtn.disabled = true;
+
+    try {
+      await joinRoom(roomId);
+    } catch (error) {
+      console.error("Failed to join room:", error);
+      alert("Couldn't join the room: " + error.message);
+    } finally {
+      joinRoomBtn.disabled = false;
     }
   });
 }
@@ -1350,13 +1866,19 @@ if (filterToggle) {
 
 function loadRoom(room) {
   setText("roomCode", room?.code ?? "—");
-  setText("slideBadge", room?.levelLabel ?? "No lesson loaded");
-  setText("slideTitle", room?.title ?? "Waiting for a lesson");
-  setText(
-    "slideBody",
-    room?.body ??
-      "Once a teacher starts a class or uploads slides, they'll appear here for everyone in the room."
-  );
+
+  // Don't stomp on the lesson-material title/body if a material is
+  // currently being shown in the stage — renderMaterialInStage()
+  // owns those fields whenever materials.length > 0.
+  if (materials.length === 0) {
+    setText("slideBadge", room?.levelLabel ?? "No lesson loaded");
+    setText("slideTitle", room?.title ?? "Waiting for a lesson");
+    setText(
+      "slideBody",
+      room?.body ??
+        "Once a teacher starts a class or uploads slides, they'll appear here for everyone in the room."
+    );
+  }
 
   setText(
     "videoLabel",
@@ -1420,6 +1942,7 @@ onAuthStateChanged(auth, (user) => {
     startLessonsListener();
     startAvailabilityListener();
     startTeachersListener();
+    startMaterialsListener();
   } else {
     console.log("No signed-in user.");
   }
