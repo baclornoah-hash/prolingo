@@ -764,3 +764,30 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   align-items: flex-start;
   flex-wrap: wrap;
 }
+
+/* Room connection status pill */
+.room-status {
+  margin-left: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.75);
+}
+.room-status:empty { display: none; }
+.room-status[data-state="connecting"],
+.room-status[data-state="reconnecting"] {
+  background: rgba(255,122,46,0.25);
+  color: #ffb37a;
+}
+.room-status[data-state="connected"] {
+  background: rgba(47,182,163,0.25);
+  color: #7fe3d3;
+}
+.room-status[data-state="disconnected"],
+.room-status[data-state="failed"] {
+  background: rgba(224,99,28,0.3);
+  color: #ffb37a;
+}
