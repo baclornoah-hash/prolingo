@@ -15,7 +15,8 @@ import {
   doc,
   setDoc,
   getDoc,
-  updateDoc
+  updateDoc,
+  deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import {
@@ -1387,15 +1388,31 @@ function stopMicVisualizer() {
   }
 }
 
+function getMediaErrorMessage(error) {
+  switch (error.name) {
+    case "NotAllowedError":
+    case "PermissionDeniedError":
+      return "Camera/microphone access was blocked. Allow camera and microphone permissions for this site in your browser settings, then try again.";
+    case "NotFoundError":
+    case "DevicesNotFoundError":
+      return "No camera or microphone was found on this device.";
+    case "NotReadableError":
+      return "Your camera or microphone is already in use by another application. Close it and try again.";
+    case "OverconstrainedError":
+      return "No camera/microphone on this device matches the requested settings.";
+    default:
+      return error.message || "Unable to access the camera and microphone.";
+  }
+}
+
 async function startCamera() {
   if (!localVideo) {
-    alert("Camera preview is unavailable.");
-    return;
+    throw new Error("Camera preview is unavailable.");
   }
 
   try {
     if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error("Camera is not supported.");
+      throw new Error("Camera is not supported in this browser.");
     }
 
     localStream = await navigator.mediaDevices.getUserMedia({
@@ -1433,7 +1450,7 @@ async function startCamera() {
       localStream = null;
     }
 
-    alert("Unable to start the camera: " + error.message);
+    throw new Error(getMediaErrorMessage(error));
   }
 }
 
@@ -1507,20 +1524,28 @@ if (micToggle) {
 
 if (joinClassBtn) {
   joinClassBtn.addEventListener("click", async () => {
-    if (localStream) {
-      stopCamera();
-    } else {
-      await startCamera();
+    try {
+      if (localStream) {
+        stopCamera();
+      } else {
+        await startCamera();
+      }
+    } catch (error) {
+      alert(error.message);
     }
   });
 }
 
 if (cameraToggle) {
   cameraToggle.addEventListener("click", async () => {
-    if (localStream) {
-      stopCamera();
-    } else {
-      await startCamera();
+    try {
+      if (localStream) {
+        stopCamera();
+      } else {
+        await startCamera();
+      }
+    } catch (error) {
+      alert(error.message);
     }
   });
 }
@@ -1543,6 +1568,7 @@ if (cameraToggle) {
 
 const createRoomBtn = $("createRoomBtn");
 const joinRoomBtn = $("joinRoomBtn");
+const leaveRoomBtn = $("leaveRoomBtn");
 const roomInput = $("roomInput");
 const remoteVideo = $("remoteVideo");
 
@@ -1560,12 +1586,92 @@ const rtcConfig = {
 let peerConnection = null;
 let remoteStream = null;
 let activeRoomId = null;
+let isRoomHost = false;
 let unsubscribeRoom = null;
 let unsubscribeCandidates = null;
+let reconnectAttempted = false;
 
 function setRemoteVisible(visible) {
   if (remoteVideo) remoteVideo.classList.toggle("is-visible", visible);
   showElement("remoteVideoPlaceholder", !visible);
+}
+
+// ------------------------------------------------------------
+// Connection status pill (#roomStatus, optional element — the
+// classroom still works if this isn't present in the markup).
+// ------------------------------------------------------------
+const ROOM_STATUS_LABELS = {
+  idle: "",
+  connecting: "Connecting…",
+  connected: "Connected",
+  reconnecting: "Reconnecting…",
+  disconnected: "Disconnected",
+  failed: "Connection failed"
+};
+
+function updateRoomStatus(state) {
+  const el = $("roomStatus");
+  if (!el) return;
+
+  el.textContent = ROOM_STATUS_LABELS[state] ?? "";
+  el.dataset.state = state;
+}
+
+// ------------------------------------------------------------
+// Roster — driven by the room document itself (createdByName /
+// joinedByName), so both sides see who else is in the room.
+// ------------------------------------------------------------
+function renderRoomRoster(data) {
+  const rosterList = $("rosterList");
+  if (!rosterList) return;
+
+  const people = [];
+
+  if (data?.createdByName) {
+    people.push({
+      name: data.createdByName,
+      role: data.createdBy === currentUser?.uid ? "You" : "Host"
+    });
+  }
+
+  if (data?.joinedByName) {
+    people.push({
+      name: data.joinedByName,
+      role: data.joinedBy === currentUser?.uid ? "You" : "Guest"
+    });
+  }
+
+  rosterList.replaceChildren();
+
+  if (people.length === 0) {
+    showElement("rosterEmpty", true);
+    return;
+  }
+
+  showElement("rosterEmpty", false);
+
+  people.forEach((person) => {
+    const li = document.createElement("li");
+
+    const avatar = document.createElement("span");
+    avatar.className = "avatar-dot";
+
+    const name = document.createTextNode(` ${person.name} `);
+
+    const role = document.createElement("em");
+    role.textContent = person.role;
+
+    li.append(avatar, name, role);
+    rosterList.appendChild(li);
+  });
+}
+
+function clearRoomRoster() {
+  const rosterList = $("rosterList");
+  if (!rosterList) return;
+
+  rosterList.replaceChildren();
+  showElement("rosterEmpty", true);
 }
 
 function resetPeerConnection() {
@@ -1586,9 +1692,43 @@ function resetPeerConnection() {
 
   remoteStream = null;
   activeRoomId = null;
+  isRoomHost = false;
+  reconnectAttempted = false;
 
   if (remoteVideo) remoteVideo.srcObject = null;
   setRemoteVisible(false);
+  updateRoomStatus("idle");
+}
+
+// Best effort only: restartIce() re-negotiates from the caller's
+// side. It won't recover every case (e.g. the callee's network
+// dropping entirely), but it recovers the common case of a
+// temporary ICE hiccup without forcing both sides to re-join.
+function attemptReconnect(pc) {
+  if (reconnectAttempted) return;
+  reconnectAttempted = true;
+
+  updateRoomStatus("reconnecting");
+
+  if (typeof pc.restartIce === "function") {
+    try {
+      pc.restartIce();
+    } catch (error) {
+      console.warn("ICE restart failed:", error);
+    }
+  }
+
+  // If we're not back to a healthy state after a few seconds,
+  // give up and tell the user plainly instead of hanging silently.
+  setTimeout(() => {
+    if (
+      peerConnection === pc &&
+      (pc.connectionState === "disconnected" || pc.connectionState === "failed")
+    ) {
+      updateRoomStatus("failed");
+      setRemoteVisible(false);
+    }
+  }, 8000);
 }
 
 function createPeerConnection() {
@@ -1613,12 +1753,26 @@ function createPeerConnection() {
   pc.onconnectionstatechange = () => {
     console.log("WebRTC connection state:", pc.connectionState);
 
-    if (
-      pc.connectionState === "disconnected" ||
-      pc.connectionState === "failed" ||
-      pc.connectionState === "closed"
-    ) {
-      setRemoteVisible(false);
+    switch (pc.connectionState) {
+      case "connected":
+        reconnectAttempted = false;
+        updateRoomStatus("connected");
+        break;
+
+      case "disconnected":
+        setRemoteVisible(false);
+        attemptReconnect(pc);
+        break;
+
+      case "failed":
+        setRemoteVisible(false);
+        updateRoomStatus("failed");
+        break;
+
+      case "closed":
+        setRemoteVisible(false);
+        updateRoomStatus("idle");
+        break;
     }
   };
 
@@ -1635,6 +1789,36 @@ async function ensureLocalStream() {
   }
 }
 
+// Shared by both host and guest: keeps the roster in sync, applies
+// the answer once it arrives, and tells the remaining participant
+// plainly if the other side ends the class (the room doc is deleted).
+function attachRoomListener(roomRef, pc) {
+  unsubscribeRoom = onSnapshot(roomRef, async (snapshot) => {
+    const data = snapshot.data();
+
+    if (!data) {
+      if (peerConnection === pc) {
+        alert("The other participant ended the class.");
+        resetPeerConnection();
+        setText("roomCode", "—");
+        if (roomInput) roomInput.value = "";
+        clearRoomRoster();
+      }
+      return;
+    }
+
+    renderRoomRoster(data);
+
+    if (
+      data.answer &&
+      pc.signalingState !== "closed" &&
+      !pc.currentRemoteDescription
+    ) {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+    }
+  });
+}
+
 async function createRoom() {
   if (!currentUser) {
     alert("Please sign in first.");
@@ -1644,9 +1828,11 @@ async function createRoom() {
   await ensureLocalStream();
 
   resetPeerConnection();
+  updateRoomStatus("connecting");
 
   const roomRef = doc(collection(db, "rooms"));
   activeRoomId = roomRef.id;
+  isRoomHost = true;
 
   const pc = createPeerConnection();
   peerConnection = pc;
@@ -1672,13 +1858,7 @@ async function createRoom() {
   setText("roomCode", activeRoomId);
   if (roomInput) roomInput.value = activeRoomId;
 
-  unsubscribeRoom = onSnapshot(roomRef, async (snapshot) => {
-    const data = snapshot.data();
-
-    if (data?.answer && pc.signalingState !== "closed" && !pc.currentRemoteDescription) {
-      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-    }
-  });
+  attachRoomListener(roomRef, pc);
 
   const calleeCandidates = collection(roomRef, "calleeCandidates");
 
@@ -1713,7 +1893,9 @@ async function joinRoom(roomId) {
   await ensureLocalStream();
 
   resetPeerConnection();
+  updateRoomStatus("connecting");
   activeRoomId = roomId;
+  isRoomHost = false;
 
   const pc = createPeerConnection();
   peerConnection = pc;
@@ -1740,6 +1922,8 @@ async function joinRoom(roomId) {
 
   setText("roomCode", roomId);
 
+  attachRoomListener(roomRef, pc);
+
   const callerCandidates = collection(roomRef, "callerCandidates");
 
   unsubscribeCandidates = onSnapshot(callerCandidates, (snapshot) => {
@@ -1751,6 +1935,28 @@ async function joinRoom(roomId) {
   });
 }
 
+// Leaving always disconnects locally. If you're the host, it also
+// deletes the room doc — ending the class for the other side too,
+// since without a host there's nothing to reconnect to.
+async function leaveRoom() {
+  const roomId = activeRoomId;
+  const wasHost = isRoomHost;
+
+  resetPeerConnection();
+
+  setText("roomCode", "—");
+  if (roomInput) roomInput.value = "";
+  clearRoomRoster();
+
+  if (wasHost && roomId) {
+    try {
+      await deleteDoc(doc(db, "rooms", roomId));
+    } catch (error) {
+      console.error("Failed to clean up room:", error);
+    }
+  }
+}
+
 if (createRoomBtn) {
   createRoomBtn.addEventListener("click", async () => {
     createRoomBtn.disabled = true;
@@ -1760,6 +1966,7 @@ if (createRoomBtn) {
     } catch (error) {
       console.error("Failed to create room:", error);
       alert("Couldn't create the room: " + error.message);
+      updateRoomStatus("idle");
     } finally {
       createRoomBtn.disabled = false;
     }
@@ -1777,8 +1984,26 @@ if (joinRoomBtn) {
     } catch (error) {
       console.error("Failed to join room:", error);
       alert("Couldn't join the room: " + error.message);
+      updateRoomStatus("idle");
     } finally {
       joinRoomBtn.disabled = false;
+    }
+  });
+}
+
+if (leaveRoomBtn) {
+  leaveRoomBtn.addEventListener("click", async () => {
+    if (!activeRoomId) return;
+
+    leaveRoomBtn.disabled = true;
+
+    try {
+      await leaveRoom();
+    } catch (error) {
+      console.error("Failed to leave room:", error);
+      alert("Something went wrong leaving the room: " + error.message);
+    } finally {
+      leaveRoomBtn.disabled = false;
     }
   });
 }
