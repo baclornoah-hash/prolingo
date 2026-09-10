@@ -745,3 +745,22 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   color: #176b3a;
   border: 1px solid #8ed5a8;
 }
+
+/* Lesson materials preview inside the Classroom slide-frame */
+.slide-media {
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.slide-media video,
+.slide-media img {
+  border-radius: 10px;
+  max-width: 100%;
+}
+
+/* Materials panel list items */
+.panel--materials .lesson-row {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
