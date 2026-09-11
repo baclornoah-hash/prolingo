@@ -44,6 +44,10 @@
     <button class="rail-link" data-view="classroom">
       <span class="rail-icon">●</span> Classroom
     </button>
+
+    <button class="rail-link" data-view="billing" data-requires="teacher,admin">
+      <span class="rail-icon">₱</span> Billing
+    </button>
   </nav>
 
     <div class="rail-foot">
@@ -148,7 +152,7 @@
 
       </div>
 
-      <!-- Lesson materials — visible to every role, populated from Firebase Storage/Firestore -->
+      <!-- Lesson materials — visible to every role, populated from Cloudinary/Firestore -->
       <div class="panel panel--materials" style="margin-top:20px;">
         <div class="panel-head">
           <h2>Lesson materials</h2>
@@ -305,6 +309,27 @@
     <!-- ============ CLASSROOM VIEW ============ -->
     <section class="view" id="view-classroom">
 
+      <!-- Schedule a class ahead of time — teacher/admin only. -->
+      <div class="panel panel--schedule" data-requires="teacher,admin" style="margin-bottom:16px;">
+        <div class="panel-head">
+          <h2>Schedule a class</h2>
+        </div>
+        <div class="schedule-form">
+          <input type="text" id="scheduleTitle" placeholder="Class title (optional)">
+          <input type="datetime-local" id="scheduleTime">
+          <button class="solid-btn" id="scheduleClassBtn">Schedule</button>
+        </div>
+      </div>
+
+      <!-- Everyone sees what's scheduled, with a live countdown. -->
+      <div class="panel panel--scheduled-list" style="margin-bottom:16px;">
+        <div class="panel-head">
+          <h2>Scheduled classes</h2>
+        </div>
+        <ul class="lesson-list" id="scheduledList"></ul>
+        <p class="empty-state" id="scheduledEmpty">No classes scheduled yet.</p>
+      </div>
+
       <div class="classroom">
 
         <div class="classroom-stage">
@@ -418,6 +443,53 @@
 
         </div>
       </div>
+    </section>
+
+    <!-- ============ BILLING VIEW ============ -->
+    <section class="view" id="view-billing">
+
+      <div class="page-heading">
+        <div>
+          <span class="section-kicker">Payroll</span>
+          <h2>Billing</h2>
+          <p>Per-class pay and GCash payouts.</p>
+        </div>
+      </div>
+
+      <!-- Teacher's own pay — hidden from students and admin sees the admin panel instead -->
+      <div class="panel panel--my-billing" data-requires="teacher" style="margin-bottom:20px;">
+        <div class="panel-head">
+          <h2>My pay</h2>
+        </div>
+        <div class="billing-summary">
+          <div>
+            <span class="billing-label">Rate per class</span>
+            <strong id="myRatePerClass">—</strong>
+          </div>
+          <div>
+            <span class="billing-label">Total earned</span>
+            <strong id="myTotalEarned">—</strong>
+          </div>
+        </div>
+        <div class="billing-gcash-form">
+          <label for="myGcashNumber">Your GCash number</label>
+          <input type="text" id="myGcashNumber" placeholder="09XX XXX XXXX">
+          <button class="solid-btn" id="saveGcashBtn">Save</button>
+        </div>
+        <h3>Payment history</h3>
+        <ul class="lesson-list" id="myPaymentsList"></ul>
+        <p class="empty-state" id="myPaymentsEmpty">No payments recorded yet.</p>
+      </div>
+
+      <!-- Admin-only: set each teacher's rate/GCash, log payments -->
+      <div class="panel panel--admin-billing" data-requires="admin">
+        <div class="panel-head">
+          <h2>Teacher payroll</h2>
+        </div>
+        <ul class="lesson-list" id="adminBillingList"></ul>
+        <p class="empty-state" id="adminBillingEmpty">No teachers found.</p>
+      </div>
+
     </section>
 
   </div>
