@@ -231,7 +231,7 @@ function renderLessons() {
 }
 
 // ============================================================
-// LESSON MATERIALS — UPLOAD (Firebase Storage + Firestore)
+// LESSON MATERIALS — UPLOAD (Cloudinary + Firestore)
 //
 // Flow:
 //   teacher/admin picks a file in #pptInput
