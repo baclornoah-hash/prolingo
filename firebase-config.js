@@ -8,10 +8,6 @@ import {
   getFirestore
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import {
-  getStorage
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-
 const firebaseConfig = {
   apiKey: "AIzaSyBGWM-ac-jKpP1qjW7MBEUAI-Tls7tP_Rk",
   authDomain: "prolingo-2de9d.firebaseapp.com",
@@ -26,4 +22,6 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const storage = getStorage(app);
+// Lesson material files are hosted on Cloudinary instead of Firebase
+// Storage (which now requires the paid Blaze plan) — see the
+// CLOUDINARY_* constants and uploadToCloudinary() in script.js.
