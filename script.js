@@ -16,7 +16,9 @@ import {
   setDoc,
   getDoc,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  query,
+  where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // (Firebase Storage import removed — uploads now go to Cloudinary,
@@ -90,6 +92,11 @@ const views = {
   classroom: {
     title: "Classroom",
     subtitle: "Live lesson in progress."
+  },
+
+  billing: {
+    title: "Billing",
+    subtitle: "Per-class pay and GCash payouts."
   }
 };
 
@@ -176,6 +183,90 @@ function updateStatsFromBookings() {
 
 let lessons = [];
 
+// ============================================================
+// FEEDBACK — 1-5 star class ratings (student -> teacher)
+// ============================================================
+
+function buildFeedbackWidget(lesson) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "feedback-widget";
+  wrapper.style.display = "none";
+
+  let selectedRating = 0;
+  const starButtons = [];
+
+  const starsRow = document.createElement("div");
+  starsRow.className = "feedback-stars";
+
+  for (let i = 1; i <= 5; i++) {
+    const starBtn = document.createElement("button");
+    starBtn.type = "button";
+    starBtn.className = "star-btn";
+    starBtn.textContent = "☆";
+
+    starBtn.addEventListener("click", () => {
+      selectedRating = i;
+      starButtons.forEach((btn, index) => {
+        const filled = index < selectedRating;
+        btn.textContent = filled ? "★" : "☆";
+        btn.classList.toggle("is-filled", filled);
+      });
+    });
+
+    starButtons.push(starBtn);
+    starsRow.appendChild(starBtn);
+  }
+
+  const commentInput = document.createElement("textarea");
+  commentInput.className = "feedback-comment";
+  commentInput.rows = 2;
+  commentInput.placeholder = "Optional comment about this class…";
+
+  const submitBtn = document.createElement("button");
+  submitBtn.type = "button";
+  submitBtn.className = "solid-btn";
+  submitBtn.textContent = "Submit feedback";
+
+  submitBtn.addEventListener("click", async () => {
+    if (!currentUser) {
+      alert("Please sign in first.");
+      return;
+    }
+
+    if (selectedRating < 1) {
+      alert("Pick a star rating first.");
+      return;
+    }
+
+    submitBtn.disabled = true;
+
+    try {
+      await addDoc(collection(db, "feedback"), {
+        teacherId: lesson.teacherId || null,
+        studentId: currentUser.uid,
+        studentName: sessionStorage.getItem("prolingo_name") || "Student",
+        lessonId: lesson.id || null,
+        rating: selectedRating,
+        comment: commentInput.value.trim(),
+        createdAt: Date.now()
+      });
+
+      wrapper.replaceChildren();
+      const thanks = document.createElement("p");
+      thanks.className = "feedback-thanks";
+      thanks.textContent = "Thanks for your feedback!";
+      wrapper.appendChild(thanks);
+    } catch (error) {
+      console.error("Failed to submit feedback:", error);
+      alert("Couldn't submit feedback: " + error.message);
+      submitBtn.disabled = false;
+    }
+  });
+
+  wrapper.append(starsRow, commentInput, submitBtn);
+  return wrapper;
+}
+
 function renderLessons() {
   const list = $("lessonList");
   const empty = $("lessonEmpty");
@@ -190,6 +281,8 @@ function renderLessons() {
   }
 
   showElement("lessonEmpty", false);
+
+  const role = sessionStorage.getItem("prolingo_role");
 
   lessons.forEach((lesson) => {
     const li = document.createElement("li");
@@ -226,6 +319,25 @@ function renderLessons() {
     }
 
     li.append(stamp, info, button);
+
+    // Students can rate any of their own booked classes — additive,
+    // doesn't touch the row's existing elements above.
+    if (role === "student" && lesson.teacherId) {
+      const rateBtn = document.createElement("button");
+      rateBtn.type = "button";
+      rateBtn.className = "ghost-btn";
+      rateBtn.textContent = "Rate class";
+
+      const feedbackWidget = buildFeedbackWidget(lesson);
+
+      rateBtn.addEventListener("click", () => {
+        const isHidden = feedbackWidget.style.display === "none";
+        feedbackWidget.style.display = isHidden ? "block" : "none";
+      });
+
+      li.append(rateBtn, feedbackWidget);
+    }
+
     list.appendChild(li);
   });
 }
@@ -998,6 +1110,8 @@ function startLessonsListener() {
           Number.isInteger(booking.slot)
         ) {
           lessons.push({
+            id: docSnap.id,
+            teacherId: data.teacherId || null,
             level: data.level || "—",
             title: data.title || "Untitled lesson",
             when: `${formatDay(currentWeekStart)} · ${
@@ -1076,6 +1190,68 @@ function startAvailabilityListener() {
 // ============================================================
 // TEACHERS — LOAD TEACHER PROFILES
 // ============================================================
+
+// ============================================================
+// FEEDBACK — live aggregation into per-teacher star ratings
+// ============================================================
+
+let feedbackEntries = [];
+let feedbackListenerStarted = false;
+let teacherRatings = {}; // teacherAuthUid -> { avg, count }
+
+function computeTeacherRatings() {
+  const sums = {};
+
+  feedbackEntries.forEach((entry) => {
+    if (!entry.teacherId) return;
+
+    if (!sums[entry.teacherId]) {
+      sums[entry.teacherId] = { total: 0, count: 0 };
+    }
+
+    sums[entry.teacherId].total += entry.rating;
+    sums[entry.teacherId].count += 1;
+  });
+
+  teacherRatings = {};
+
+  Object.keys(sums).forEach((teacherId) => {
+    teacherRatings[teacherId] = {
+      avg: sums[teacherId].total / sums[teacherId].count,
+      count: sums[teacherId].count
+    };
+  });
+}
+
+function startFeedbackListener() {
+  if (feedbackListenerStarted) return;
+  feedbackListenerStarted = true;
+
+  onSnapshot(
+    collection(db, "feedback"),
+    (snapshot) => {
+      feedbackEntries = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        feedbackEntries.push({
+          teacherId: data.teacherId || null,
+          rating: Number(data.rating) || 0,
+          comment: data.comment || "",
+          studentName: data.studentName || "Student",
+          createdAt: data.createdAt || 0
+        });
+      });
+
+      computeTeacherRatings();
+      renderTeachers();
+    },
+    (error) => {
+      console.error("Feedback listener error:", error);
+    }
+  );
+}
 
 let teachers = [];
 let teachersListenerStarted = false;
@@ -1256,9 +1432,26 @@ function renderTeachers() {
       buildTeacherSchedule();
     });
 
+    const ratingLine = document.createElement("p");
+    ratingLine.className = "teacher-rating";
+
+    const ratingInfo = teacherRatings[teacher.authUid];
+
+    if (ratingInfo) {
+      const fullStars = Math.round(ratingInfo.avg);
+      ratingLine.textContent = `${"★".repeat(fullStars)}${"☆".repeat(
+        5 - fullStars
+      )} ${ratingInfo.avg.toFixed(1)} (${ratingInfo.count} review${
+        ratingInfo.count === 1 ? "" : "s"
+      })`;
+    } else {
+      ratingLine.textContent = "☆☆☆☆☆ No ratings yet";
+    }
+
     content.append(
       name,
       specialization,
+      ratingLine,
       bio,
       details
     );
@@ -1726,6 +1919,7 @@ let peerConnection = null;
 let remoteStream = null;
 let activeRoomId = null;
 let isRoomHost = false;
+let activeScheduledClassId = null;
 let unsubscribeRoom = null;
 let unsubscribeCandidates = null;
 let reconnectAttempted = false;
@@ -1832,6 +2026,7 @@ function resetPeerConnection() {
   remoteStream = null;
   activeRoomId = null;
   isRoomHost = false;
+  activeScheduledClassId = null;
   reconnectAttempted = false;
 
   if (remoteVideo) remoteVideo.srcObject = null;
@@ -1958,7 +2153,9 @@ function attachRoomListener(roomRef, pc) {
   });
 }
 
-async function createRoom() {
+async function createRoom(options = {}) {
+  const { explicitRoomId, scheduledClassId } = options;
+
   if (!currentUser) {
     alert("Please sign in first.");
     return;
@@ -1969,9 +2166,13 @@ async function createRoom() {
   resetPeerConnection();
   updateRoomStatus("connecting");
 
-  const roomRef = doc(collection(db, "rooms"));
+  const roomRef = explicitRoomId
+    ? doc(db, "rooms", explicitRoomId)
+    : doc(collection(db, "rooms"));
+
   activeRoomId = roomRef.id;
   isRoomHost = true;
+  activeScheduledClassId = scheduledClassId || null;
 
   const pc = createPeerConnection();
   peerConnection = pc;
@@ -1993,6 +2194,16 @@ async function createRoom() {
     createdByName: sessionStorage.getItem("prolingo_name") || "Host",
     createdAt: Date.now()
   });
+
+  if (scheduledClassId) {
+    try {
+      await updateDoc(doc(db, "scheduledClasses", scheduledClassId), {
+        status: "live"
+      });
+    } catch (error) {
+      console.error("Failed to mark scheduled class live:", error);
+    }
+  }
 
   setText("roomCode", activeRoomId);
   if (roomInput) roomInput.value = activeRoomId;
@@ -2080,6 +2291,7 @@ async function joinRoom(roomId) {
 async function leaveRoom() {
   const roomId = activeRoomId;
   const wasHost = isRoomHost;
+  const scheduledClassId = activeScheduledClassId;
 
   resetPeerConnection();
 
@@ -2092,6 +2304,16 @@ async function leaveRoom() {
       await deleteDoc(doc(db, "rooms", roomId));
     } catch (error) {
       console.error("Failed to clean up room:", error);
+    }
+  }
+
+  if (wasHost && scheduledClassId) {
+    try {
+      await updateDoc(doc(db, "scheduledClasses", scheduledClassId), {
+        status: "ended"
+      });
+    } catch (error) {
+      console.error("Failed to mark scheduled class ended:", error);
     }
   }
 }
@@ -2144,6 +2366,579 @@ if (leaveRoomBtn) {
     } finally {
       leaveRoomBtn.disabled = false;
     }
+  });
+}
+
+// ============================================================
+// SCHEDULED CLASSES
+//
+// Fixes the "the room code only exists if the teacher is online
+// right now" problem: a teacher picks a date/time up front, gets a
+// stable room ID immediately (stored in Firestore), and everyone —
+// teacher included — sees a countdown to it. When the teacher
+// actually starts it, createRoom() reuses that same room ID, so
+// students who show up expecting to "Join now" always have a valid
+// code waiting, instead of one that vanished when the last host left.
+// ============================================================
+
+const scheduleTitleInput = $("scheduleTitle");
+const scheduleTimeInput = $("scheduleTime");
+const scheduleClassBtn = $("scheduleClassBtn");
+
+let scheduledClasses = [];
+let scheduledClassesListenerStarted = false;
+
+function formatCountdown(msRemaining) {
+  const totalSeconds = Math.max(0, Math.floor(msRemaining / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+function updateScheduledCountdowns() {
+  document.querySelectorAll(".schedule-countdown").forEach((el) => {
+    const scheduledAt = Number(el.dataset.scheduledAt);
+    const remaining = scheduledAt - Date.now();
+
+    el.textContent =
+      remaining > 0
+        ? `Starts in ${formatCountdown(remaining)}`
+        : "Ready to start";
+  });
+}
+
+setInterval(updateScheduledCountdowns, 1000);
+
+function renderScheduledClasses() {
+  const list = $("scheduledList");
+
+  if (!list) return;
+
+  list.replaceChildren();
+
+  if (scheduledClasses.length === 0) {
+    showElement("scheduledEmpty", true);
+    return;
+  }
+
+  showElement("scheduledEmpty", false);
+
+  const role = sessionStorage.getItem("prolingo_role");
+
+  scheduledClasses.forEach((item) => {
+    const li = document.createElement("li");
+    li.className = "lesson-row";
+
+    const info = document.createElement("div");
+    info.className = "lesson-info";
+
+    const title = document.createElement("strong");
+    title.textContent = item.title || "Untitled class";
+
+    const details = document.createElement("span");
+    details.textContent = `${item.teacherName} · ${new Date(
+      item.scheduledAt
+    ).toLocaleString()}`;
+
+    const countdown = document.createElement("span");
+    countdown.className = "schedule-countdown";
+    countdown.dataset.scheduledAt = item.scheduledAt;
+
+    info.append(title, details, countdown);
+
+    const button = document.createElement("button");
+    button.className = "join-btn";
+
+    const isOwner = item.teacherId === currentUser?.uid;
+    const timeReached = Date.now() >= item.scheduledAt;
+
+    if (item.status === "ended") {
+      button.textContent = "Ended";
+      button.disabled = true;
+      button.classList.add("join-btn--wait");
+    } else if (item.status === "live") {
+      button.textContent = isOwner ? "Rejoin" : "Join now";
+      button.addEventListener("click", () => {
+        showView("classroom");
+
+        joinRoom(item.roomId).catch((error) => {
+          alert("Couldn't join: " + error.message);
+        });
+      });
+    } else if (isOwner && (role === "teacher" || role === "admin")) {
+      button.textContent = timeReached ? "Start class" : "Start early";
+      button.addEventListener("click", async () => {
+        showView("classroom");
+
+        try {
+          await createRoom({
+            explicitRoomId: item.roomId,
+            scheduledClassId: item.id
+          });
+        } catch (error) {
+          alert("Couldn't start class: " + error.message);
+        }
+      });
+    } else {
+      button.textContent = "Scheduled";
+      button.disabled = true;
+      button.classList.add("join-btn--wait");
+    }
+
+    li.append(info, button);
+    list.appendChild(li);
+  });
+
+  updateScheduledCountdowns();
+}
+
+function startScheduledClassesListener() {
+  if (scheduledClassesListenerStarted) return;
+  scheduledClassesListenerStarted = true;
+
+  onSnapshot(
+    collection(db, "scheduledClasses"),
+    (snapshot) => {
+      const cutoff = Date.now() - 3 * 60 * 60 * 1000;
+
+      scheduledClasses = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        // Keep the list relevant — drop classes that ended more
+        // than 3 hours ago instead of showing them forever.
+        if (data.status === "ended" && data.scheduledAt < cutoff) {
+          return;
+        }
+
+        scheduledClasses.push({
+          id: docSnap.id,
+          teacherId: data.teacherId || null,
+          teacherName: data.teacherName || "Teacher",
+          title: data.title || "",
+          roomId: data.roomId || docSnap.id,
+          scheduledAt: data.scheduledAt || 0,
+          status: data.status || "scheduled"
+        });
+      });
+
+      scheduledClasses.sort((a, b) => a.scheduledAt - b.scheduledAt);
+
+      renderScheduledClasses();
+    },
+    (error) => {
+      console.error("Scheduled classes listener error:", error);
+
+      setText(
+        "scheduledEmpty",
+        "Unable to load scheduled classes. Check your Firestore rules."
+      );
+    }
+  );
+}
+
+if (scheduleClassBtn) {
+  scheduleClassBtn.addEventListener("click", async () => {
+    if (!currentUser) {
+      alert("Please sign in first.");
+      return;
+    }
+
+    const role = sessionStorage.getItem("prolingo_role");
+
+    if (role !== "teacher" && role !== "admin") {
+      alert("Only teachers or admins can schedule a class.");
+      return;
+    }
+
+    const timeValue = scheduleTimeInput?.value;
+
+    if (!timeValue) {
+      alert("Pick a date and time first.");
+      return;
+    }
+
+    const scheduledAt = new Date(timeValue).getTime();
+
+    if (Number.isNaN(scheduledAt)) {
+      alert("Please enter a valid date and time.");
+      return;
+    }
+
+    if (scheduledAt < Date.now() - 60000) {
+      alert("Please pick a time in the future.");
+      return;
+    }
+
+    scheduleClassBtn.disabled = true;
+
+    try {
+      const scheduledRef = doc(collection(db, "scheduledClasses"));
+
+      await setDoc(scheduledRef, {
+        teacherId: currentUser.uid,
+        teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
+        title: scheduleTitleInput?.value.trim() || "",
+        roomId: scheduledRef.id,
+        scheduledAt,
+        status: "scheduled",
+        createdAt: Date.now()
+      });
+
+      if (scheduleTitleInput) scheduleTitleInput.value = "";
+      if (scheduleTimeInput) scheduleTimeInput.value = "";
+    } catch (error) {
+      console.error("Failed to schedule class:", error);
+      alert("Couldn't schedule the class: " + error.message);
+    } finally {
+      scheduleClassBtn.disabled = false;
+    }
+  });
+}
+
+// ============================================================
+// BILLING — per-class pay + GCash payouts
+//
+// teacherBilling/{teacherAuthUid}: { ratePerClass, gcashNumber }
+//   - admin sets/changes ratePerClass
+//   - the teacher themself can only change their own gcashNumber
+//     (enforced in firestore.rules, not just here)
+// payments/{auto}: a payroll log entry admin creates when paying a
+//   teacher via GCash — { teacherId, teacherName, classesCount,
+//   amount, gcashNumber, note, createdBy, createdByName, createdAt }
+// ============================================================
+
+let teacherBillingMap = {}; // authUid -> { ratePerClass, gcashNumber }
+let myBilling = { ratePerClass: null, gcashNumber: "" };
+let payments = []; // admin: every payment. teacher: only their own.
+let billingListenerStarted = false;
+let paymentsListenerStarted = false;
+
+function formatCurrency(amount) {
+  const value = Number(amount) || 0;
+  return `₱${value.toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`;
+}
+
+function startBillingListener() {
+  if (billingListenerStarted) return;
+  billingListenerStarted = true;
+
+  const role = sessionStorage.getItem("prolingo_role");
+
+  if (role === "admin") {
+    onSnapshot(
+      collection(db, "teacherBilling"),
+      (snapshot) => {
+        teacherBillingMap = {};
+        snapshot.forEach((docSnap) => {
+          teacherBillingMap[docSnap.id] = docSnap.data();
+        });
+        renderAdminBilling();
+      },
+      (error) => {
+        console.error("Teacher billing listener error:", error);
+      }
+    );
+  } else if (role === "teacher" && currentUser) {
+    onSnapshot(
+      doc(db, "teacherBilling", currentUser.uid),
+      (snapshot) => {
+        myBilling = snapshot.exists()
+          ? snapshot.data()
+          : { ratePerClass: null, gcashNumber: "" };
+        renderMyBilling();
+      },
+      (error) => {
+        console.error("My billing listener error:", error);
+      }
+    );
+  }
+}
+
+function startPaymentsListener() {
+  if (paymentsListenerStarted) return;
+  paymentsListenerStarted = true;
+
+  const role = sessionStorage.getItem("prolingo_role");
+  let paymentsQuery;
+
+  if (role === "admin") {
+    paymentsQuery = collection(db, "payments");
+  } else if (role === "teacher" && currentUser) {
+    paymentsQuery = query(
+      collection(db, "payments"),
+      where("teacherId", "==", currentUser.uid)
+    );
+  } else {
+    return; // students don't see billing
+  }
+
+  onSnapshot(
+    paymentsQuery,
+    (snapshot) => {
+      payments = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        payments.push({
+          id: docSnap.id,
+          teacherId: data.teacherId || null,
+          teacherName: data.teacherName || "Teacher",
+          classesCount: Number(data.classesCount) || 0,
+          amount: Number(data.amount) || 0,
+          gcashNumber: data.gcashNumber || "",
+          note: data.note || "",
+          createdAt: data.createdAt || 0
+        });
+      });
+
+      payments.sort((a, b) => b.createdAt - a.createdAt);
+
+      renderMyBilling();
+      renderAdminBilling();
+    },
+    (error) => {
+      console.error("Payments listener error:", error);
+    }
+  );
+}
+
+function renderMyBilling() {
+  const role = sessionStorage.getItem("prolingo_role");
+  if (role !== "teacher") return;
+
+  setText(
+    "myRatePerClass",
+    myBilling.ratePerClass != null
+      ? `${formatCurrency(myBilling.ratePerClass)} / class`
+      : "Not set yet"
+  );
+
+  const myPayments = payments.filter((p) => p.teacherId === currentUser?.uid);
+  const total = myPayments.reduce((sum, p) => sum + p.amount, 0);
+  setText("myTotalEarned", formatCurrency(total));
+
+  const gcashInput = $("myGcashNumber");
+  if (gcashInput && document.activeElement !== gcashInput) {
+    gcashInput.value = myBilling.gcashNumber || "";
+  }
+
+  const list = $("myPaymentsList");
+
+  if (list) {
+    list.replaceChildren();
+
+    if (myPayments.length === 0) {
+      showElement("myPaymentsEmpty", true);
+    } else {
+      showElement("myPaymentsEmpty", false);
+
+      myPayments.forEach((p) => {
+        const li = document.createElement("li");
+        li.className = "lesson-row";
+
+        const info = document.createElement("div");
+        info.className = "lesson-info";
+
+        const title = document.createElement("strong");
+        title.textContent = `${formatCurrency(p.amount)} · ${
+          p.classesCount
+        } class${p.classesCount === 1 ? "" : "es"}`;
+
+        const details = document.createElement("span");
+        details.textContent = `${new Date(
+          p.createdAt
+        ).toLocaleDateString()}${p.note ? " · " + p.note : ""}`;
+
+        info.append(title, details);
+        li.append(info);
+        list.appendChild(li);
+      });
+    }
+  }
+}
+
+const saveGcashBtn = $("saveGcashBtn");
+
+if (saveGcashBtn) {
+  saveGcashBtn.addEventListener("click", async () => {
+    if (!currentUser) {
+      alert("Please sign in first.");
+      return;
+    }
+
+    const gcashInput = $("myGcashNumber");
+    const value = gcashInput?.value.trim() || "";
+
+    saveGcashBtn.disabled = true;
+
+    try {
+      await setDoc(
+        doc(db, "teacherBilling", currentUser.uid),
+        { gcashNumber: value, updatedAt: Date.now() },
+        { merge: true }
+      );
+      alert("GCash number saved.");
+    } catch (error) {
+      console.error("Failed to save GCash number:", error);
+      alert("Couldn't save: " + error.message);
+    } finally {
+      saveGcashBtn.disabled = false;
+    }
+  });
+}
+
+function renderAdminBilling() {
+  const role = sessionStorage.getItem("prolingo_role");
+  if (role !== "admin") return;
+
+  const list = $("adminBillingList");
+  if (!list) return;
+
+  list.replaceChildren();
+
+  if (teachers.length === 0) {
+    showElement("adminBillingEmpty", true);
+    return;
+  }
+
+  showElement("adminBillingEmpty", false);
+
+  teachers.forEach((teacher) => {
+    if (!teacher.authUid) return;
+
+    const billing = teacherBillingMap[teacher.authUid] || {};
+    const teacherPayments = payments.filter(
+      (p) => p.teacherId === teacher.authUid
+    );
+    const totalPaid = teacherPayments.reduce((sum, p) => sum + p.amount, 0);
+
+    const li = document.createElement("li");
+    li.className = "lesson-row billing-row";
+
+    const info = document.createElement("div");
+    info.className = "lesson-info";
+
+    const title = document.createElement("strong");
+    title.textContent = teacher.name || "Unnamed teacher";
+
+    const details = document.createElement("span");
+    details.textContent = `GCash: ${
+      billing.gcashNumber || "not set"
+    } · Total paid: ${formatCurrency(totalPaid)}`;
+
+    info.append(title, details);
+
+    const controls = document.createElement("div");
+    controls.className = "billing-controls";
+
+    const rateInput = document.createElement("input");
+    rateInput.type = "number";
+    rateInput.min = "0";
+    rateInput.step = "0.01";
+    rateInput.placeholder = "Rate/class";
+    rateInput.className = "billing-rate-input";
+    rateInput.value = billing.ratePerClass ?? "";
+
+    const saveRateBtn = document.createElement("button");
+    saveRateBtn.type = "button";
+    saveRateBtn.className = "ghost-btn";
+    saveRateBtn.textContent = "Save rate";
+
+    saveRateBtn.addEventListener("click", async () => {
+      const rateValue = Number(rateInput.value);
+
+      if (Number.isNaN(rateValue) || rateValue < 0) {
+        alert("Enter a valid rate.");
+        return;
+      }
+
+      saveRateBtn.disabled = true;
+
+      try {
+        await setDoc(
+          doc(db, "teacherBilling", teacher.authUid),
+          { ratePerClass: rateValue, updatedAt: Date.now() },
+          { merge: true }
+        );
+      } catch (error) {
+        console.error("Failed to save rate:", error);
+        alert("Couldn't save rate: " + error.message);
+      } finally {
+        saveRateBtn.disabled = false;
+      }
+    });
+
+    const classesInput = document.createElement("input");
+    classesInput.type = "number";
+    classesInput.min = "1";
+    classesInput.placeholder = "# classes";
+    classesInput.className = "billing-classes-input";
+
+    const amountInput = document.createElement("input");
+    amountInput.type = "number";
+    amountInput.min = "0";
+    amountInput.step = "0.01";
+    amountInput.placeholder = "Amount (₱)";
+    amountInput.className = "billing-amount-input";
+
+    const logPaymentBtn = document.createElement("button");
+    logPaymentBtn.type = "button";
+    logPaymentBtn.className = "solid-btn";
+    logPaymentBtn.textContent = "Log GCash payment";
+
+    logPaymentBtn.addEventListener("click", async () => {
+      const classesCount = Number(classesInput.value) || 0;
+      const amount = Number(amountInput.value);
+
+      if (Number.isNaN(amount) || amount <= 0) {
+        alert("Enter a valid payment amount.");
+        return;
+      }
+
+      logPaymentBtn.disabled = true;
+
+      try {
+        await addDoc(collection(db, "payments"), {
+          teacherId: teacher.authUid,
+          teacherName: teacher.name || "Teacher",
+          classesCount,
+          amount,
+          gcashNumber: billing.gcashNumber || "",
+          note: "",
+          createdBy: currentUser.uid,
+          createdByName: sessionStorage.getItem("prolingo_name") || "Admin",
+          createdAt: Date.now()
+        });
+
+        classesInput.value = "";
+        amountInput.value = "";
+        alert("Payment logged.");
+      } catch (error) {
+        console.error("Failed to log payment:", error);
+        alert("Couldn't log payment: " + error.message);
+      } finally {
+        logPaymentBtn.disabled = false;
+      }
+    });
+
+    controls.append(
+      rateInput,
+      saveRateBtn,
+      classesInput,
+      amountInput,
+      logPaymentBtn
+    );
+
+    li.append(info, controls);
+    list.appendChild(li);
   });
 }
 
@@ -2307,6 +3102,10 @@ onAuthStateChanged(auth, (user) => {
     startAvailabilityListener();
     startTeachersListener();
     startMaterialsListener();
+    startScheduledClassesListener();
+    startFeedbackListener();
+    startBillingListener();
+    startPaymentsListener();
   } else {
     console.log("No signed-in user.");
   }
