@@ -2,7 +2,7 @@
 // FIREBASE
 // ============================================================
 
-import { auth, db, storage } from "./firebase-config.js";
+import { auth, db } from "./firebase-config.js";
 
 import {
   onAuthStateChanged
@@ -19,11 +19,8 @@ import {
   deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import {
-  ref,
-  uploadBytesResumable,
-  getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+// (Firebase Storage import removed — uploads now go to Cloudinary,
+// see CLOUDINARY_* constants and uploadToCloudinary() below.)
 
 // ============================================================
 // HELPERS
@@ -238,13 +235,27 @@ function renderLessons() {
 //
 // Flow:
 //   teacher/admin picks a file in #pptInput
-//     -> uploaded to Storage at lessons/{teacherUid}/{timestamp}_{name}
-//     -> upload progress shown in #dropzoneFile
-//     -> on completion, download URL + metadata saved to the
+//     -> uploaded to Cloudinary's free tier (no billing account
+//        needed — unlike Firebase Storage, which now requires Blaze)
+//     -> on completion, the returned URL + metadata are saved to the
 //        "lessonMaterials" Firestore collection
 //     -> the live listener below (startMaterialsListener) picks it
 //        up for every signed-in user, teacher or student
 // ============================================================
+
+// ------------------------------------------------------------
+// TODO: fill these in with your own free Cloudinary account:
+//   1. Sign up at cloudinary.com (no card required)
+//   2. Dashboard shows your "Cloud name" — put it below
+//   3. Settings -> Upload -> Add upload preset
+//        - Signing Mode: "Unsigned"
+//        - (optional but recommended) set an allowed file size /
+//          format restriction on the preset itself, since anyone
+//          who can see your site's JS can see the preset name
+//   4. Put that preset's name below
+// ------------------------------------------------------------
+const CLOUDINARY_CLOUD_NAME = "ha89kor5";
+const CLOUDINARY_UPLOAD_PRESET = "prolingo_lessons";
 
 const pptInput = $("pptInput");
 const dropzoneFile = $("dropzoneFile");
@@ -254,6 +265,49 @@ function guessMaterialType(file) {
   if (file.type.startsWith("image/")) return "image";
   if (file.type === "application/pdf") return "pdf";
   return "file";
+}
+
+// Cloudinary's "auto" endpoint accepts images, video, and raw files
+// (pdf/pptx) all in one place, and reports upload progress the same
+// way XMLHttpRequest always has — fetch() doesn't expose progress
+// events, which is the one reason this uses XHR instead.
+function uploadToCloudinary(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    if (CLOUDINARY_CLOUD_NAME === "YOUR_CLOUD_NAME") {
+      reject(new Error(
+        "Cloudinary isn't configured yet — set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET in script.js."
+      ));
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open(
+      "POST",
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`
+    );
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        reject(new Error(`Upload failed (${xhr.status}). Check the upload preset name and that it's set to "Unsigned".`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error during upload."));
+
+    xhr.send(formData);
+  });
 }
 
 async function handleMaterialUpload(file) {
@@ -270,65 +324,39 @@ async function handleMaterialUpload(file) {
   }
 
   const materialType = guessMaterialType(file);
-  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  const storagePath = `lessons/${currentUser.uid}/${Date.now()}_${safeName}`;
-  const storageRef = ref(storage, storagePath);
-
-  const uploadTask = uploadBytesResumable(storageRef, file);
 
   if (dropzoneFile) {
     dropzoneFile.textContent = `Uploading ${file.name}… 0%`;
   }
 
-  uploadTask.on(
-    "state_changed",
-    (snapshot) => {
-      const percent = Math.round(
-        (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-      );
-
+  try {
+    const result = await uploadToCloudinary(file, (percent) => {
       if (dropzoneFile) {
         dropzoneFile.textContent = `Uploading ${file.name}… ${percent}%`;
       }
-    },
-    (error) => {
-      console.error("Lesson material upload failed:", error);
+    });
 
-      if (dropzoneFile) {
-        dropzoneFile.textContent = `Upload failed: ${error.message}`;
-      }
+    await addDoc(collection(db, "lessonMaterials"), {
+      teacherId: currentUser.uid,
+      teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
+      title: file.name,
+      fileType: materialType,
+      fileUrl: result.secure_url,
+      createdAt: Date.now()
+    });
 
-      alert(
-        "Upload failed. Check that Firebase Storage is enabled for this project and that its rules allow this account to write to " +
-          storagePath
-      );
-    },
-    async () => {
-      try {
-        const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-
-        await addDoc(collection(db, "lessonMaterials"), {
-          teacherId: currentUser.uid,
-          teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
-          title: file.name,
-          fileType: materialType,
-          fileUrl: downloadUrl,
-          storagePath,
-          createdAt: Date.now()
-        });
-
-        if (dropzoneFile) {
-          dropzoneFile.textContent = `Uploaded: ${file.name}`;
-        }
-      } catch (error) {
-        console.error("Saving lesson material metadata failed:", error);
-
-        if (dropzoneFile) {
-          dropzoneFile.textContent = `Upload finished, but saving details failed: ${error.message}`;
-        }
-      }
+    if (dropzoneFile) {
+      dropzoneFile.textContent = `Uploaded: ${file.name}`;
     }
-  );
+  } catch (error) {
+    console.error("Lesson material upload failed:", error);
+
+    if (dropzoneFile) {
+      dropzoneFile.textContent = `Upload failed: ${error.message}`;
+    }
+
+    alert("Upload failed: " + error.message);
+  }
 }
 
 if (pptInput) {
@@ -1044,6 +1072,105 @@ function startAvailabilityListener() {
 let teachers = [];
 let teachersListenerStarted = false;
 
+// ============================================================
+// TEACHERS — INTRO VIDEO PLAYBACK (in-page, no Cloud Storage)
+//
+// teacher.introVideoUrl can be a YouTube link, a Vimeo link, or a
+// direct video file URL (hosted anywhere — GitHub, Cloudinary's free
+// tier, etc). Whichever it is, it plays inline on this page instead
+// of sending the visitor to another site.
+// ============================================================
+
+function getVideoEmbed(url) {
+  if (!url) return null;
+
+  const youtubeMatch = url.match(
+    /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{6,})/
+  );
+
+  if (youtubeMatch) {
+    return {
+      type: "iframe",
+      src: `https://www.youtube.com/embed/${youtubeMatch[1]}`
+    };
+  }
+
+  const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+
+  if (vimeoMatch) {
+    return {
+      type: "iframe",
+      src: `https://player.vimeo.com/video/${vimeoMatch[1]}`
+    };
+  }
+
+  // Anything else is treated as a direct, playable video file URL.
+  return { type: "file", src: url };
+}
+
+function buildIntroVideoBlock(teacher) {
+  const embed = getVideoEmbed(teacher.introVideoUrl);
+
+  if (!embed) return null;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "teacher-intro-video";
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.type = "button";
+  toggleBtn.className = "ghost-btn intro-video-toggle";
+  toggleBtn.textContent = "▶ Watch intro";
+
+  const playerHolder = document.createElement("div");
+  playerHolder.className = "intro-video-player";
+  playerHolder.style.display = "none";
+
+  let loaded = false;
+
+  toggleBtn.addEventListener("click", () => {
+    const isHidden = playerHolder.style.display === "none";
+
+    if (isHidden) {
+      if (!loaded) {
+        if (embed.type === "iframe") {
+          const iframe = document.createElement("iframe");
+          iframe.src = embed.src;
+          iframe.allow =
+            "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+          iframe.allowFullscreen = true;
+          iframe.loading = "lazy";
+          playerHolder.appendChild(iframe);
+        } else {
+          const video = document.createElement("video");
+          video.src = embed.src;
+          video.controls = true;
+          video.playsInline = true;
+          playerHolder.appendChild(video);
+        }
+        loaded = true;
+      }
+
+      playerHolder.style.display = "block";
+      toggleBtn.textContent = "▲ Hide intro";
+    } else {
+      // Stop playback rather than just hiding it — reloading an
+      // iframe's own src stops YouTube/Vimeo; pausing does it for
+      // a native <video>.
+      const video = playerHolder.querySelector("video");
+      if (video) video.pause();
+
+      const iframe = playerHolder.querySelector("iframe");
+      if (iframe) iframe.src = iframe.src;
+
+      playerHolder.style.display = "none";
+      toggleBtn.textContent = "▶ Watch intro";
+    }
+  });
+
+  wrapper.append(toggleBtn, playerHolder);
+  return wrapper;
+}
+
 function renderTeachers() {
   const teacherGrid = $("teacherGrid");
   const teacherEmpty = $("teacherEmpty");
@@ -1125,9 +1252,13 @@ function renderTeachers() {
       name,
       specialization,
       bio,
-      details,
-      button
+      details
     );
+
+    const introVideo = buildIntroVideoBlock(teacher);
+    if (introVideo) content.append(introVideo);
+
+    content.append(button);
 
     card.append(photo, content);
     teacherGrid.appendChild(card);
