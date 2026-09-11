@@ -300,7 +300,15 @@ function uploadToCloudinary(file, onProgress) {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(JSON.parse(xhr.responseText));
       } else {
-        reject(new Error(`Upload failed (${xhr.status}). Check the upload preset name and that it's set to "Unsigned".`));
+        let detail = xhr.responseText;
+
+        try {
+          detail = JSON.parse(xhr.responseText)?.error?.message || detail;
+        } catch (parseError) {
+          // responseText wasn't JSON — fall back to the raw text above.
+        }
+
+        reject(new Error(`Upload failed (${xhr.status}): ${detail}`));
       }
     };
 
