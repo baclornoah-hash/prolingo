@@ -320,9 +320,16 @@ function renderLessons() {
 
     li.append(stamp, info, button);
 
-    // Students can rate any of their own booked classes — additive,
-    // doesn't touch the row's existing elements above.
-    if (role === "student" && lesson.teacherId) {
+    // Students can rate a class only after it has actually ended —
+    // computed from the lesson's real date + slot end time, not just
+    // whether it's currently marked "live". Additive: doesn't touch
+    // the row's existing elements above.
+    const lessonHasEnded =
+      lesson.date &&
+      Number.isInteger(lesson.slot) &&
+      Date.now() >= getSlotEndTimestamp(lesson.date, lesson.slot);
+
+    if (role === "student" && lesson.teacherId && lessonHasEnded) {
       const rateBtn = document.createElement("button");
       rateBtn.type = "button";
       rateBtn.className = "ghost-btn";
@@ -666,6 +673,17 @@ function getDateKey(date) {
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+}
+
+// Used to gate "Rate class" — a lesson only counts as over once its
+// slot's end time has actually passed, not just because it was
+// marked "live" at some point.
+function getSlotEndTimestamp(dateKey, slotIndex) {
+  const endTimeStr = timeSlots[slotIndex + 1] || "12:30";
+  const [hours, minutes] = endTimeStr.split(":").map(Number);
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  return new Date(year, month - 1, day, hours, minutes, 0, 0).getTime();
 }
 
 function getWeekDays() {
@@ -1112,6 +1130,8 @@ function startLessonsListener() {
           lessons.push({
             id: docSnap.id,
             teacherId: data.teacherId || null,
+            date: bookingDate,
+            slot: booking.slot,
             level: data.level || "—",
             title: data.title || "Untitled lesson",
             when: `${formatDay(currentWeekStart)} · ${
@@ -1441,7 +1461,7 @@ function renderTeachers() {
       const fullStars = Math.round(ratingInfo.avg);
       ratingLine.textContent = `${"★".repeat(fullStars)}${"☆".repeat(
         5 - fullStars
-      )} ${ratingInfo.avg.toFixed(1)} (${ratingInfo.count} review${
+      )} ${ratingInfo.avg.toFixed(1)} (${ratingInfo.count} rating${
         ratingInfo.count === 1 ? "" : "s"
       })`;
     } else {
