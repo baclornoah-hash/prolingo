@@ -883,6 +883,48 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   width: 110px;
 }
 
+/* Profile */
+.profile-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.profile-photo-preview {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--violet-lt);
+  flex-shrink: 0;
+}
+.profile-inline-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.profile-inline-form input {
+  flex: 1;
+  min-width: 180px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+}
+.profile-password-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.profile-password-form input {
+  flex: 1;
+  min-width: 180px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+}
+
 /* Lesson materials preview inside the Classroom slide-frame */
 .slide-media {
   align-items: center;
