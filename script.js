@@ -5,7 +5,10 @@
 import { auth, db } from "./firebase-config.js";
 
 import {
-  onAuthStateChanged
+  onAuthStateChanged,
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 import {
@@ -97,6 +100,11 @@ const views = {
   billing: {
     title: "Billing",
     subtitle: "Per-class pay and GCash payouts."
+  },
+
+  profile: {
+    title: "My Profile",
+    subtitle: "Manage your name, photo, contacts, and password."
   }
 };
 
@@ -2963,6 +2971,344 @@ function renderAdminBilling() {
 }
 
 // ============================================================
+// PROFILE — name, photo, extra contacts, password
+//
+// Reuses uploadToCloudinary() (already defined above for lesson
+// materials) for the profile photo — same free pipeline, no new
+// service needed. Name/photo/contacts live on the user's own
+// users/{uid} doc; firestore.rules restricts a self-update to only
+// those fields, never role.
+// ============================================================
+
+const profileNameInput = $("profileNameInput");
+const saveProfileNameBtn = $("saveProfileNameBtn");
+const profilePhotoInput = $("profilePhotoInput");
+const profilePhotoPreview = $("profilePhotoPreview");
+const profilePhotoStatus = $("profilePhotoStatus");
+const extraEmailsList = $("extraEmailsList");
+const newExtraEmailInput = $("newExtraEmail");
+const addExtraEmailBtn = $("addExtraEmailBtn");
+const extraPhonesList = $("extraPhonesList");
+const newExtraPhoneInput = $("newExtraPhone");
+const addExtraPhoneBtn = $("addExtraPhoneBtn");
+const currentPasswordInput = $("currentPasswordInput");
+const newPasswordInput = $("newPasswordInput");
+const changePasswordBtn = $("changePasswordBtn");
+
+let myProfile = {
+  name: "",
+  photoUrl: "",
+  additionalEmails: [],
+  mobileNumbers: []
+};
+let profileListenerStarted = false;
+
+function renderProfilePhoto() {
+  if (profilePhotoPreview) {
+    profilePhotoPreview.src = myProfile.photoUrl || "default-teacher.png";
+  }
+
+  // Mirror the photo (or fall back to initials) onto the topbar chip
+  // too, without touching how auth-guard.js fills in the rest of it.
+  const avatarEl = document.querySelector(".user-avatar");
+
+  if (avatarEl) {
+    if (myProfile.photoUrl) {
+      avatarEl.style.backgroundImage = `url(${myProfile.photoUrl})`;
+      avatarEl.style.backgroundSize = "cover";
+      avatarEl.style.backgroundPosition = "center";
+      avatarEl.textContent = "";
+    } else {
+      avatarEl.style.backgroundImage = "";
+      const initials = (myProfile.name || sessionStorage.getItem("prolingo_name") || "")
+        .trim()
+        .slice(0, 2)
+        .toUpperCase();
+      avatarEl.textContent = initials || "--";
+    }
+  }
+}
+
+function renderProfileName() {
+  if (profileNameInput && document.activeElement !== profileNameInput) {
+    profileNameInput.value = myProfile.name || "";
+  }
+}
+
+function renderExtraList(listEl, items, onRemove) {
+  if (!listEl) return;
+
+  listEl.replaceChildren();
+
+  items.forEach((item, index) => {
+    const li = document.createElement("li");
+    li.className = "lesson-row";
+
+    const info = document.createElement("div");
+    info.className = "lesson-info";
+
+    const text = document.createElement("strong");
+    text.textContent = item;
+    info.appendChild(text);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "ghost-btn";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", () => onRemove(index));
+
+    li.append(info, removeBtn);
+    listEl.appendChild(li);
+  });
+}
+
+function renderProfileContacts() {
+  renderExtraList(
+    extraEmailsList,
+    myProfile.additionalEmails || [],
+    async (index) => {
+      const updated = [...(myProfile.additionalEmails || [])];
+      updated.splice(index, 1);
+
+      try {
+        await saveProfileFields({ additionalEmails: updated });
+      } catch (error) {
+        console.error("Failed to remove email:", error);
+        alert("Couldn't remove that email: " + error.message);
+      }
+    }
+  );
+
+  renderExtraList(
+    extraPhonesList,
+    myProfile.mobileNumbers || [],
+    async (index) => {
+      const updated = [...(myProfile.mobileNumbers || [])];
+      updated.splice(index, 1);
+
+      try {
+        await saveProfileFields({ mobileNumbers: updated });
+      } catch (error) {
+        console.error("Failed to remove phone number:", error);
+        alert("Couldn't remove that number: " + error.message);
+      }
+    }
+  );
+}
+
+async function saveProfileFields(fields) {
+  if (!currentUser) return;
+  await updateDoc(doc(db, "users", currentUser.uid), fields);
+}
+
+function startProfileListener() {
+  if (profileListenerStarted || !currentUser) return;
+  profileListenerStarted = true;
+
+  onSnapshot(
+    doc(db, "users", currentUser.uid),
+    (snapshot) => {
+      const data = snapshot.data() || {};
+
+      myProfile = {
+        name: data.name || "",
+        photoUrl: data.photoUrl || "",
+        additionalEmails: data.additionalEmails || [],
+        mobileNumbers: data.mobileNumbers || []
+      };
+
+      renderProfilePhoto();
+      renderProfileName();
+      renderProfileContacts();
+
+      // Keep the session cache + topbar name in sync with Firestore.
+      if (myProfile.name) {
+        sessionStorage.setItem("prolingo_name", myProfile.name);
+        setText("userName", myProfile.name);
+      }
+    },
+    (error) => {
+      console.error("Profile listener error:", error);
+    }
+  );
+}
+
+if (saveProfileNameBtn) {
+  saveProfileNameBtn.addEventListener("click", async () => {
+    if (!currentUser) {
+      alert("Please sign in first.");
+      return;
+    }
+
+    const newName = profileNameInput?.value.trim();
+
+    if (!newName) {
+      alert("Enter a name first.");
+      return;
+    }
+
+    saveProfileNameBtn.disabled = true;
+
+    try {
+      await saveProfileFields({ name: newName });
+    } catch (error) {
+      console.error("Failed to save name:", error);
+      alert("Couldn't save: " + error.message);
+    } finally {
+      saveProfileNameBtn.disabled = false;
+    }
+  });
+}
+
+if (profilePhotoInput) {
+  profilePhotoInput.addEventListener("change", async () => {
+    const file = profilePhotoInput.files?.[0];
+
+    if (!file) return;
+
+    if (!currentUser) {
+      alert("Please sign in first.");
+      return;
+    }
+
+    if (profilePhotoStatus) {
+      profilePhotoStatus.textContent = `Uploading ${file.name}… 0%`;
+    }
+
+    try {
+      const result = await uploadToCloudinary(file, (percent) => {
+        if (profilePhotoStatus) {
+          profilePhotoStatus.textContent = `Uploading ${file.name}… ${percent}%`;
+        }
+      });
+
+      await saveProfileFields({ photoUrl: result.secure_url });
+
+      if (profilePhotoStatus) {
+        profilePhotoStatus.textContent = "Photo updated!";
+      }
+    } catch (error) {
+      console.error("Profile photo upload failed:", error);
+
+      if (profilePhotoStatus) {
+        profilePhotoStatus.textContent = `Upload failed: ${error.message}`;
+      }
+
+      alert("Upload failed: " + error.message);
+    } finally {
+      profilePhotoInput.value = "";
+    }
+  });
+}
+
+if (addExtraEmailBtn) {
+  addExtraEmailBtn.addEventListener("click", async () => {
+    const value = newExtraEmailInput?.value.trim();
+
+    if (!value) return;
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      alert("Enter a valid email address.");
+      return;
+    }
+
+    const updated = [...(myProfile.additionalEmails || []), value];
+
+    addExtraEmailBtn.disabled = true;
+
+    try {
+      await saveProfileFields({ additionalEmails: updated });
+      if (newExtraEmailInput) newExtraEmailInput.value = "";
+    } catch (error) {
+      console.error("Failed to add email:", error);
+      alert("Couldn't add email: " + error.message);
+    } finally {
+      addExtraEmailBtn.disabled = false;
+    }
+  });
+}
+
+if (addExtraPhoneBtn) {
+  addExtraPhoneBtn.addEventListener("click", async () => {
+    const value = newExtraPhoneInput?.value.trim();
+
+    if (!value) return;
+
+    const updated = [...(myProfile.mobileNumbers || []), value];
+
+    addExtraPhoneBtn.disabled = true;
+
+    try {
+      await saveProfileFields({ mobileNumbers: updated });
+      if (newExtraPhoneInput) newExtraPhoneInput.value = "";
+    } catch (error) {
+      console.error("Failed to add phone number:", error);
+      alert("Couldn't add phone number: " + error.message);
+    } finally {
+      addExtraPhoneBtn.disabled = false;
+    }
+  });
+}
+
+if (changePasswordBtn) {
+  changePasswordBtn.addEventListener("click", async () => {
+    if (!currentUser || !currentUser.email) {
+      alert("Please sign in first.");
+      return;
+    }
+
+    const currentPassword = currentPasswordInput?.value || "";
+    const newPassword = newPasswordInput?.value || "";
+
+    if (!currentPassword || !newPassword) {
+      alert("Fill in both your current and new password.");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      alert("New password must be at least 6 characters.");
+      return;
+    }
+
+    changePasswordBtn.disabled = true;
+
+    try {
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        currentPassword
+      );
+
+      await reauthenticateWithCredential(currentUser, credential);
+      await updatePassword(currentUser, newPassword);
+
+      if (currentPasswordInput) currentPasswordInput.value = "";
+      if (newPasswordInput) newPasswordInput.value = "";
+
+      alert("Password changed successfully.");
+    } catch (error) {
+      console.error("Failed to change password:", error);
+
+      let message = error.message;
+
+      if (
+        error.code === "auth/wrong-password" ||
+        error.code === "auth/invalid-credential"
+      ) {
+        message = "Your current password is incorrect.";
+      } else if (error.code === "auth/weak-password") {
+        message = "Please choose a stronger password.";
+      } else if (error.code === "auth/requires-recent-login") {
+        message = "Please log out and log back in, then try again.";
+      }
+
+      alert("Couldn't change password: " + message);
+    } finally {
+      changePasswordBtn.disabled = false;
+    }
+  });
+}
+
+// ============================================================
 // CLASSROOM — CHAT
 // ============================================================
 
@@ -3126,6 +3472,7 @@ onAuthStateChanged(auth, (user) => {
     startFeedbackListener();
     startBillingListener();
     startPaymentsListener();
+    startProfileListener();
   } else {
     console.log("No signed-in user.");
   }
