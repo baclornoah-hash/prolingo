@@ -48,6 +48,10 @@
     <button class="rail-link" data-view="billing" data-requires="teacher,admin">
       <span class="rail-icon">₱</span> Billing
     </button>
+
+    <button class="rail-link" data-view="profile">
+      <span class="rail-icon">☺</span> Profile
+    </button>
   </nav>
 
     <div class="rail-foot">
@@ -488,6 +492,77 @@
         </div>
         <ul class="lesson-list" id="adminBillingList"></ul>
         <p class="empty-state" id="adminBillingEmpty">No teachers found.</p>
+      </div>
+
+    </section>
+
+    <!-- ============ PROFILE VIEW ============ -->
+    <section class="view" id="view-profile">
+
+      <div class="page-heading">
+        <div>
+          <span class="section-kicker">Account</span>
+          <h2>My Profile</h2>
+          <p>Update your name, photo, contact info, and password.</p>
+        </div>
+      </div>
+
+      <div class="panel panel--profile-photo" style="margin-bottom:20px;">
+        <div class="panel-head">
+          <h2>Profile picture</h2>
+        </div>
+        <div class="profile-photo-row">
+          <img id="profilePhotoPreview" class="profile-photo-preview" src="default-teacher.png" alt="Profile picture">
+          <label class="dropzone" for="profilePhotoInput" style="flex:1;">
+            <span class="dropzone-icon">⇪</span>
+            <span><strong>Upload a new photo</strong><br>JPG, PNG, or GIF</span>
+            <input type="file" id="profilePhotoInput" accept="image/*" hidden>
+          </label>
+        </div>
+        <div class="dropzone-file" id="profilePhotoStatus"></div>
+      </div>
+
+      <div class="panel panel--profile-name" style="margin-bottom:20px;">
+        <div class="panel-head">
+          <h2>Name</h2>
+        </div>
+        <div class="profile-inline-form">
+          <input type="text" id="profileNameInput" placeholder="Your full name">
+          <button class="solid-btn" id="saveProfileNameBtn">Save</button>
+        </div>
+      </div>
+
+      <div class="panel panel--profile-contacts" style="margin-bottom:20px;">
+        <div class="panel-head">
+          <h2>Additional emails</h2>
+        </div>
+        <ul class="lesson-list" id="extraEmailsList"></ul>
+        <div class="profile-inline-form">
+          <input type="email" id="newExtraEmail" placeholder="another@email.com">
+          <button class="solid-btn" id="addExtraEmailBtn">Add</button>
+        </div>
+      </div>
+
+      <div class="panel panel--profile-contacts" style="margin-bottom:20px;">
+        <div class="panel-head">
+          <h2>Mobile numbers</h2>
+        </div>
+        <ul class="lesson-list" id="extraPhonesList"></ul>
+        <div class="profile-inline-form">
+          <input type="tel" id="newExtraPhone" placeholder="09XX XXX XXXX">
+          <button class="solid-btn" id="addExtraPhoneBtn">Add</button>
+        </div>
+      </div>
+
+      <div class="panel panel--profile-password">
+        <div class="panel-head">
+          <h2>Change password</h2>
+        </div>
+        <div class="profile-password-form">
+          <input type="password" id="currentPasswordInput" placeholder="Current password" autocomplete="current-password">
+          <input type="password" id="newPasswordInput" placeholder="New password (min 6 characters)" autocomplete="new-password">
+          <button class="solid-btn" id="changePasswordBtn">Change password</button>
+        </div>
       </div>
 
     </section>
