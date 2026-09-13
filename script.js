@@ -18,6 +18,7 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
   updateDoc,
   deleteDoc,
   query,
@@ -792,12 +793,20 @@ function buildCalendar() {
         slot.className = `slot slot--${match.type || "booked"}`;
         slot.textContent = match.label || "Booked";
 
+        const canPreview =
+          match.type === "booking" &&
+          match.studentId &&
+          (role === "admin" ||
+            (role === "teacher" && match.teacherId === currentUser?.uid));
+
+        if (canPreview) {
+          slot.style.cursor = "pointer";
+          slot.title = "Tap to view student details";
+          slot.addEventListener("click", () => openLessonDetail(match));
+        }
+
         td.appendChild(slot);
       });
-
-      // ============================================================
-      // GENERAL CALENDAR AVAILABILITY
-      //
       // ONLY THE TEACHER'S OWN AVAILABILITY BELONGS HERE.
       //
       // STUDENTS NEVER SEE AVAILABILITY IN THE GENERAL CALENDAR.
@@ -952,6 +961,19 @@ function buildTeacherSchedule() {
         slot.className = `slot slot--${match.type || "booked"}`;
         slot.textContent = match.label || "Booked";
 
+        const viewerRole = sessionStorage.getItem("prolingo_role");
+        const canPreview =
+          match.type === "booking" &&
+          match.studentId &&
+          (viewerRole === "admin" ||
+            (viewerRole === "teacher" && match.teacherId === currentUser?.uid));
+
+        if (canPreview) {
+          slot.style.cursor = "pointer";
+          slot.title = "Tap to view student details";
+          slot.addEventListener("click", () => openLessonDetail(match));
+        }
+
         td.appendChild(slot);
       });
 
@@ -1006,13 +1028,16 @@ function buildTeacherSchedule() {
               await addDoc(collection(db, "lessons"), {
                 type: "booking",
                 teacherId: selectedTeacherId,
+                teacherName: selectedTeacherName || "",
                 studentId: currentUser.uid,
                 studentName:
                   sessionStorage.getItem("prolingo_name") || "Student",
+                studentEnglishName: myProfile.englishName || "",
                 date: dateKey,
                 day: dateKey,
                 slot: rowIndex,
                 status: "scheduled",
+                hasRemark: false,
                 createdAt: Date.now()
               });
 
@@ -1073,6 +1098,297 @@ $("teacherScheduleNext")?.addEventListener("click", () => {
 });
 
 // ============================================================
+// LESSON DETAIL — tap a booked slot to see the student, their
+// course book, lesson history, and remarks left by any teacher who
+// has taught them before. A teacher must leave a remark for a class
+// before it's marked hasRemark: true — the admin Billing view uses
+// that flag to show which of a teacher's classes are still missing
+// a remark before they get paid for it.
+// ============================================================
+
+function closeLessonDetail() {
+  const overlay = $("lessonDetailOverlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+async function openLessonDetail(lesson) {
+  const overlay = $("lessonDetailOverlay");
+  const content = $("lessonDetailContent");
+
+  if (!overlay || !content) return;
+
+  content.replaceChildren();
+
+  const role = sessionStorage.getItem("prolingo_role");
+  const canEdit =
+    role === "admin" ||
+    (role === "teacher" && lesson.teacherId === currentUser?.uid);
+
+  const heading = document.createElement("h2");
+  heading.textContent = lesson.studentName || "Student";
+  content.appendChild(heading);
+
+  if (lesson.studentEnglishName) {
+    const englishNameLine = document.createElement("p");
+    englishNameLine.className = "panel-copy";
+    englishNameLine.textContent = `English name: ${lesson.studentEnglishName}`;
+    content.appendChild(englishNameLine);
+  }
+
+  const whenLine = document.createElement("p");
+  whenLine.className = "panel-copy";
+  whenLine.textContent = `${lesson.date || ""} · ${
+    timeSlots[lesson.slot] || ""
+  }`;
+  content.appendChild(whenLine);
+
+  // ---- Course book / material (teacher/admin editable) ----
+  const bookHeading = document.createElement("h3");
+  bookHeading.textContent = "Selected book / material";
+  content.appendChild(bookHeading);
+
+  const bookRow = document.createElement("div");
+  bookRow.className = "profile-inline-form";
+
+  const bookInput = document.createElement("input");
+  bookInput.type = "text";
+  bookInput.placeholder = "e.g. New English File — Book 2, Unit 5";
+  bookInput.value = lesson.courseBook || "";
+  bookInput.disabled = !canEdit;
+
+  bookRow.appendChild(bookInput);
+
+  if (canEdit) {
+    const saveBookBtn = document.createElement("button");
+    saveBookBtn.type = "button";
+    saveBookBtn.className = "solid-btn";
+    saveBookBtn.textContent = "Save";
+
+    saveBookBtn.addEventListener("click", async () => {
+      saveBookBtn.disabled = true;
+
+      try {
+        await updateDoc(doc(db, "lessons", lesson.id), {
+          courseBook: bookInput.value.trim()
+        });
+        lesson.courseBook = bookInput.value.trim();
+      } catch (error) {
+        console.error("Failed to save course book:", error);
+        alert("Couldn't save: " + error.message);
+      } finally {
+        saveBookBtn.disabled = false;
+      }
+    });
+
+    bookRow.appendChild(saveBookBtn);
+  }
+
+  content.appendChild(bookRow);
+
+  // ---- Lesson history for this student (any teacher) ----
+  const historyHeading = document.createElement("h3");
+  historyHeading.textContent = "Lesson history";
+  content.appendChild(historyHeading);
+
+  const historyList = document.createElement("ul");
+  historyList.className = "lesson-list";
+  content.appendChild(historyList);
+
+  const historyEmpty = document.createElement("p");
+  historyEmpty.className = "empty-state";
+  historyEmpty.textContent = "Loading…";
+  content.appendChild(historyEmpty);
+
+  try {
+    const historySnap = await getDocs(
+      query(collection(db, "lessons"), where("studentId", "==", lesson.studentId))
+    );
+
+    const historyItems = [];
+
+    historySnap.forEach((docSnap) => {
+      const d = docSnap.data();
+      if (d.type !== "booking") return;
+
+      historyItems.push({
+        date: d.date || "",
+        slot: Number(d.slot),
+        teacherName: d.teacherName || ""
+      });
+    });
+
+    historyItems.sort((a, b) => a.date.localeCompare(b.date));
+
+    if (historyItems.length === 0) {
+      historyEmpty.textContent = "No previous lessons found.";
+    } else {
+      historyEmpty.remove();
+
+      historyItems.forEach((item) => {
+        const li = document.createElement("li");
+        li.className = "lesson-row";
+        li.textContent = `${item.date} · ${timeSlots[item.slot] || ""}${
+          item.teacherName ? " · " + item.teacherName : ""
+        }`;
+        historyList.appendChild(li);
+      });
+    }
+  } catch (error) {
+    console.error("Failed to load lesson history:", error);
+    historyEmpty.textContent = "Couldn't load lesson history.";
+  }
+
+  // ---- Previous remarks left by any teacher for this student ----
+  const remarksHeading = document.createElement("h3");
+  remarksHeading.textContent = "Previous remarks";
+  content.appendChild(remarksHeading);
+
+  const remarksList = document.createElement("ul");
+  remarksList.className = "lesson-list";
+  content.appendChild(remarksList);
+
+  const remarksEmpty = document.createElement("p");
+  remarksEmpty.className = "empty-state";
+  remarksEmpty.textContent = "Loading…";
+  content.appendChild(remarksEmpty);
+
+  try {
+    const remarksSnap = await getDocs(
+      query(
+        collection(db, "classRemarks"),
+        where("studentId", "==", lesson.studentId)
+      )
+    );
+
+    const remarkItems = [];
+
+    remarksSnap.forEach((docSnap) => {
+      const d = docSnap.data();
+      remarkItems.push({
+        teacherName: d.teacherName || "Teacher",
+        remark: d.remark || "",
+        createdAt: d.createdAt || 0
+      });
+    });
+
+    remarkItems.sort((a, b) => b.createdAt - a.createdAt);
+
+    if (remarkItems.length === 0) {
+      remarksEmpty.textContent = "No previous remarks yet.";
+    } else {
+      remarksEmpty.remove();
+
+      remarkItems.forEach((item) => {
+        const li = document.createElement("li");
+        li.className = "lesson-row";
+
+        const info = document.createElement("div");
+        info.className = "lesson-info";
+
+        const title = document.createElement("strong");
+        title.textContent = item.teacherName;
+
+        const details = document.createElement("span");
+        details.textContent = `${new Date(
+          item.createdAt
+        ).toLocaleDateString()} — ${item.remark}`;
+
+        info.append(title, details);
+        li.appendChild(info);
+        remarksList.appendChild(li);
+      });
+    }
+  } catch (error) {
+    console.error("Failed to load previous remarks:", error);
+    remarksEmpty.textContent = "Couldn't load previous remarks.";
+  }
+
+  // ---- Leave a remark for THIS class (required before it's payable) ----
+  if (canEdit) {
+    const remarkHeading = document.createElement("h3");
+    remarkHeading.textContent = lesson.hasRemark
+      ? "Your remark for this class"
+      : "Leave your remark for this class";
+    content.appendChild(remarkHeading);
+
+    if (lesson.hasRemark) {
+      const doneP = document.createElement("p");
+      doneP.className = "feedback-thanks";
+      doneP.textContent = "Remark already submitted for this class.";
+      content.appendChild(doneP);
+    } else {
+      const warnP = document.createElement("p");
+      warnP.className = "empty-state";
+      warnP.textContent =
+        "A remark is required before this class counts toward pay.";
+      content.appendChild(warnP);
+
+      const remarkInput = document.createElement("textarea");
+      remarkInput.className = "feedback-comment";
+      remarkInput.rows = 3;
+      remarkInput.placeholder =
+        "What did you cover, how did the student do, next steps…";
+      content.appendChild(remarkInput);
+
+      const submitRemarkBtn = document.createElement("button");
+      submitRemarkBtn.type = "button";
+      submitRemarkBtn.className = "solid-btn";
+      submitRemarkBtn.textContent = "Submit remark";
+
+      submitRemarkBtn.addEventListener("click", async () => {
+        const remarkText = remarkInput.value.trim();
+
+        if (!remarkText) {
+          alert("Write a remark first.");
+          return;
+        }
+
+        submitRemarkBtn.disabled = true;
+
+        try {
+          await addDoc(collection(db, "classRemarks"), {
+            lessonId: lesson.id,
+            teacherId: currentUser.uid,
+            teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
+            studentId: lesson.studentId,
+            remark: remarkText,
+            createdAt: Date.now()
+          });
+
+          await updateDoc(doc(db, "lessons", lesson.id), {
+            hasRemark: true
+          });
+
+          closeLessonDetail();
+        } catch (error) {
+          console.error("Failed to submit remark:", error);
+          alert("Couldn't submit remark: " + error.message);
+          submitRemarkBtn.disabled = false;
+        }
+      });
+
+      content.appendChild(submitRemarkBtn);
+    }
+  }
+
+  overlay.style.display = "flex";
+}
+
+const closeLessonDetailBtn = $("closeLessonDetailBtn");
+
+if (closeLessonDetailBtn) {
+  closeLessonDetailBtn.addEventListener("click", closeLessonDetail);
+}
+
+const lessonDetailOverlay = $("lessonDetailOverlay");
+
+if (lessonDetailOverlay) {
+  lessonDetailOverlay.addEventListener("click", (event) => {
+    if (event.target === lessonDetailOverlay) closeLessonDetail();
+  });
+}
+
+// ============================================================
 // LESSONS LIVE SYNC
 // ============================================================
 
@@ -1120,13 +1436,17 @@ function startLessonsListener() {
         const booking = {
           id: docSnap.id,
           teacherId: data.teacherId || null,
+          teacherName: data.teacherName || "",
           studentId: data.studentId || null,
           date: bookingDate,
           day: data.day,
           slot: Number(data.slot),
           type: data.type || "booked",
           label: data.label || data.studentName || "Booked",
-          studentName: data.studentName || data.label || "—"
+          studentName: data.studentName || data.label || "—",
+          studentEnglishName: data.studentEnglishName || "",
+          courseBook: data.courseBook || "",
+          hasRemark: Boolean(data.hasRemark)
         };
 
         bookings.push(booking);
@@ -3085,6 +3405,12 @@ function renderAdminBilling() {
     );
     const totalPaid = teacherPayments.reduce((sum, p) => sum + p.amount, 0);
 
+    const teacherLessons = bookings.filter(
+      (b) => b.teacherId === teacher.authUid && b.type === "booking"
+    );
+    const withRemark = teacherLessons.filter((b) => b.hasRemark).length;
+    const missingRemark = teacherLessons.length - withRemark;
+
     const li = document.createElement("li");
     li.className = "lesson-row billing-row";
 
@@ -3099,7 +3425,19 @@ function renderAdminBilling() {
       billing.gcashNumber || "not set"
     } · Total paid: ${formatCurrency(totalPaid)}`;
 
-    info.append(title, details);
+    const remarkStatus = document.createElement("span");
+    remarkStatus.className =
+      missingRemark > 0 ? "billing-remark-warning" : "billing-remark-ok";
+    remarkStatus.textContent =
+      missingRemark > 0
+        ? `⚠ ${missingRemark} class${
+            missingRemark === 1 ? "" : "es"
+          } missing a remark — not payable yet`
+        : `✓ ${withRemark} class${
+            withRemark === 1 ? "" : "es"
+          } payable (remark submitted)`;
+
+    info.append(title, details, remarkStatus);
 
     const controls = document.createElement("div");
     controls.className = "billing-controls";
@@ -3218,6 +3556,7 @@ function renderAdminBilling() {
 // ============================================================
 
 const profileNameInput = $("profileNameInput");
+const profileEnglishNameInput = $("profileEnglishNameInput");
 const saveProfileNameBtn = $("saveProfileNameBtn");
 const profilePhotoInput = $("profilePhotoInput");
 const profilePhotoPreview = $("profilePhotoPreview");
@@ -3234,6 +3573,7 @@ const changePasswordBtn = $("changePasswordBtn");
 
 let myProfile = {
   name: "",
+  englishName: "",
   photoUrl: "",
   additionalEmails: [],
   mobileNumbers: []
@@ -3245,7 +3585,7 @@ function renderProfilePhoto() {
     profilePhotoPreview.src = myProfile.photoUrl || "default-teacher.png";
   }
 
-  // Mirror the photo (or fall back to initials) onto the topbar chip
+    // Mirror the photo (or fall back to initials) onto the topbar chip
   // too, without touching how auth-guard.js fills in the rest of it.
   const avatarEl = document.querySelector(".user-avatar");
 
@@ -3270,6 +3610,13 @@ function renderProfileName() {
   if (profileNameInput && document.activeElement !== profileNameInput) {
     profileNameInput.value = myProfile.name || "";
   }
+
+  if (
+    profileEnglishNameInput &&
+    document.activeElement !== profileEnglishNameInput
+  ) {
+    profileEnglishNameInput.value = myProfile.englishName || "";
+  }
 }
 
 function renderExtraList(listEl, items, onRemove) {
@@ -3280,7 +3627,7 @@ function renderExtraList(listEl, items, onRemove) {
   items.forEach((item, index) => {
     const li = document.createElement("li");
     li.className = "lesson-row";
-
+    
     const info = document.createElement("div");
     info.className = "lesson-info";
 
@@ -3349,6 +3696,7 @@ function startProfileListener() {
 
       myProfile = {
         name: data.name || "",
+        englishName: data.englishName || "",
         photoUrl: data.photoUrl || "",
         additionalEmails: data.additionalEmails || [],
         mobileNumbers: data.mobileNumbers || []
@@ -3387,7 +3735,10 @@ if (saveProfileNameBtn) {
     saveProfileNameBtn.disabled = true;
 
     try {
-      await saveProfileFields({ name: newName });
+      await saveProfileFields({
+        name: newName,
+        englishName: profileEnglishNameInput?.value.trim() || ""
+      });
     } catch (error) {
       console.error("Failed to save name:", error);
       alert("Couldn't save: " + error.message);
@@ -3866,3 +4217,4 @@ onAuthStateChanged(auth, (user) => {
     console.log("No signed-in user.");
   }
 });
+
