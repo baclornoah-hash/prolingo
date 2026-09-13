@@ -561,8 +561,12 @@
         <div class="panel-head">
           <h2>Name</h2>
         </div>
+        <p class="panel-copy">Your name can be written in any language or script. If it uses characters an English speaker might not be able to read, add an English name too — teachers will see both.</p>
         <div class="profile-inline-form">
-          <input type="text" id="profileNameInput" placeholder="Your full name">
+          <input type="text" id="profileNameInput" placeholder="Your full name (any language)">
+        </div>
+        <div class="profile-inline-form" style="margin-top:10px;">
+          <input type="text" id="profileEnglishNameInput" placeholder="English name (optional)">
           <button class="solid-btn" id="saveProfileNameBtn">Save</button>
         </div>
       </div>
@@ -620,6 +624,15 @@
 
     </section>
 
+  </div>
+</div>
+
+<!-- Populated by openLessonDetail() in script.js when a teacher/admin
+     taps a booked slot in Calendar or a Teacher's Schedule. -->
+<div class="modal-overlay" id="lessonDetailOverlay" style="display:none;">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="closeLessonDetailBtn">✕</button>
+    <div id="lessonDetailContent"></div>
   </div>
 </div>
 
