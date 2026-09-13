@@ -943,6 +943,61 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   font-weight: 600;
 }
 
+/* Billing — remark status badges */
+.billing-remark-warning {
+  color: var(--orange-dk);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+.billing-remark-ok {
+  color: var(--teal);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+/* Lesson detail modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(36, 27, 56, 0.55);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-box {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 26px;
+  max-width: 520px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: var(--shadow-pop);
+}
+.modal-box h2 {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+}
+.modal-box h3 {
+  margin: 20px 0 8px;
+  font-size: 1rem;
+}
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 1rem;
+  color: var(--text-soft);
+}
+
 /* Add/Edit Teacher form */
 .teacher-form-photo-row {
   display: flex;
