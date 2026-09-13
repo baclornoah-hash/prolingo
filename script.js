@@ -1316,6 +1316,15 @@ function getVideoEmbed(url) {
     };
   }
 
+  const loomMatch = url.match(/loom\.com\/(?:share|embed)\/([a-zA-Z0-9]+)/);
+
+  if (loomMatch) {
+    return {
+      type: "iframe",
+      src: `https://www.loom.com/embed/${loomMatch[1]}`
+    };
+  }
+
   // Anything else is treated as a direct, playable video file URL.
   return { type: "file", src: url };
 }
@@ -1380,6 +1389,49 @@ function buildIntroVideoBlock(teacher) {
   });
 
   wrapper.append(toggleBtn, playerHolder);
+  return wrapper;
+}
+
+// Certificates a teacher uploads themselves (see the "My
+// certificates" panel in Profile) show up here automatically —
+// they live as a `certificates` array field on the same teachers/{id}
+// doc the admin form edits, so this needs no separate listener.
+function buildCertificatesBlock(teacher) {
+  const certs = teacher.certificates || [];
+
+  if (certs.length === 0) return null;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "teacher-certificates";
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.type = "button";
+  toggleBtn.className = "ghost-btn";
+  toggleBtn.textContent = `📄 Certificates (${certs.length})`;
+
+  const listHolder = document.createElement("ul");
+  listHolder.className = "certificate-links";
+  listHolder.style.display = "none";
+
+  certs.forEach((cert) => {
+    const li = document.createElement("li");
+
+    const link = document.createElement("a");
+    link.href = cert.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = cert.fileName || "View certificate";
+
+    li.appendChild(link);
+    listHolder.appendChild(li);
+  });
+
+  toggleBtn.addEventListener("click", () => {
+    const isHidden = listHolder.style.display === "none";
+    listHolder.style.display = isHidden ? "block" : "none";
+  });
+
+  wrapper.append(toggleBtn, listHolder);
   return wrapper;
 }
 
@@ -1487,10 +1539,194 @@ function renderTeachers() {
     const introVideo = buildIntroVideoBlock(teacher);
     if (introVideo) content.append(introVideo);
 
+    const certificatesBlock = buildCertificatesBlock(teacher);
+    if (certificatesBlock) content.append(certificatesBlock);
+
     content.append(button);
+
+    const role = sessionStorage.getItem("prolingo_role");
+
+    if (role === "admin") {
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "ghost-btn teacher-edit-btn";
+      editBtn.textContent = "Edit profile";
+
+      editBtn.addEventListener("click", () => {
+        showTeacherForm(teacher);
+      });
+
+      content.append(editBtn);
+    }
 
     card.append(photo, content);
     teacherGrid.appendChild(card);
+  });
+}
+
+// ============================================================
+// ADMIN — ADD / EDIT TEACHER PROFILE
+//
+// The only way teacher profiles (including their directory photo)
+// get created or changed. Photo upload reuses the same
+// uploadToCloudinary() pipeline as lesson materials and the user
+// profile photo — no separate service needed. Firestore already
+// restricts all writes to the "teachers" collection to admins
+// (see firestore.rules), so no rules change was needed for this.
+// ============================================================
+
+const teacherFormPanel = $("teacherFormPanel");
+const teacherFormTitle = $("teacherFormTitle");
+const teacherFormPhotoInput = $("teacherFormPhotoInput");
+const teacherFormPhotoPreview = $("teacherFormPhotoPreview");
+const teacherFormPhotoStatus = $("teacherFormPhotoStatus");
+const teacherFormName = $("teacherFormName");
+const teacherFormAuthUid = $("teacherFormAuthUid");
+const teacherFormSpecialization = $("teacherFormSpecialization");
+const teacherFormQualifications = $("teacherFormQualifications");
+const teacherFormTeachingStyle = $("teacherFormTeachingStyle");
+const teacherFormIntroVideoUrl = $("teacherFormIntroVideoUrl");
+const teacherFormBio = $("teacherFormBio");
+const saveTeacherBtn = $("saveTeacherBtn");
+const cancelTeacherFormBtn = $("cancelTeacherFormBtn");
+const addTeacherBtn = $("addTeacherBtn");
+
+let teacherFormEditingId = null;
+let teacherFormPhotoUrl = "";
+
+function showTeacherForm(teacher) {
+  teacherFormEditingId = teacher?.id || null;
+  teacherFormPhotoUrl = teacher?.photoUrl || "";
+
+  if (teacherFormTitle) {
+    teacherFormTitle.textContent = teacher ? "Edit teacher" : "Add teacher";
+  }
+
+  if (teacherFormName) teacherFormName.value = teacher?.name || "";
+  if (teacherFormAuthUid) teacherFormAuthUid.value = teacher?.authUid || "";
+  if (teacherFormSpecialization) {
+    teacherFormSpecialization.value = teacher?.specialization || "";
+  }
+  if (teacherFormQualifications) {
+    teacherFormQualifications.value = teacher?.qualifications || "";
+  }
+  if (teacherFormTeachingStyle) {
+    teacherFormTeachingStyle.value = teacher?.teachingStyle || "";
+  }
+  if (teacherFormIntroVideoUrl) {
+    teacherFormIntroVideoUrl.value = teacher?.introVideoUrl || "";
+  }
+  if (teacherFormBio) teacherFormBio.value = teacher?.bio || "";
+  if (teacherFormPhotoPreview) {
+    teacherFormPhotoPreview.src = teacherFormPhotoUrl || "default-teacher.png";
+  }
+  if (teacherFormPhotoStatus) teacherFormPhotoStatus.textContent = "";
+
+  if (teacherFormPanel) teacherFormPanel.style.display = "block";
+}
+
+function hideTeacherForm() {
+  teacherFormEditingId = null;
+  teacherFormPhotoUrl = "";
+  if (teacherFormPanel) teacherFormPanel.style.display = "none";
+}
+
+if (addTeacherBtn) {
+  addTeacherBtn.addEventListener("click", () => {
+    showTeacherForm(null);
+  });
+}
+
+if (cancelTeacherFormBtn) {
+  cancelTeacherFormBtn.addEventListener("click", () => {
+    hideTeacherForm();
+  });
+}
+
+if (teacherFormPhotoInput) {
+  teacherFormPhotoInput.addEventListener("change", async () => {
+    const file = teacherFormPhotoInput.files?.[0];
+
+    if (!file) return;
+
+    if (teacherFormPhotoStatus) {
+      teacherFormPhotoStatus.textContent = `Uploading ${file.name}… 0%`;
+    }
+
+    try {
+      const result = await uploadToCloudinary(file, (percent) => {
+        if (teacherFormPhotoStatus) {
+          teacherFormPhotoStatus.textContent = `Uploading ${file.name}… ${percent}%`;
+        }
+      });
+
+      teacherFormPhotoUrl = result.secure_url;
+
+      if (teacherFormPhotoPreview) {
+        teacherFormPhotoPreview.src = teacherFormPhotoUrl;
+      }
+
+      if (teacherFormPhotoStatus) {
+        teacherFormPhotoStatus.textContent = "Photo uploaded!";
+      }
+    } catch (error) {
+      console.error("Teacher photo upload failed:", error);
+
+      if (teacherFormPhotoStatus) {
+        teacherFormPhotoStatus.textContent = `Upload failed: ${error.message}`;
+      }
+
+      alert("Upload failed: " + error.message);
+    } finally {
+      teacherFormPhotoInput.value = "";
+    }
+  });
+}
+
+if (saveTeacherBtn) {
+  saveTeacherBtn.addEventListener("click", async () => {
+    if (!currentUser) {
+      alert("Please sign in first.");
+      return;
+    }
+
+    const name = teacherFormName?.value.trim();
+
+    if (!name) {
+      alert("Enter the teacher's name first.");
+      return;
+    }
+
+    const teacherData = {
+      name,
+      authUid: teacherFormAuthUid?.value.trim() || "",
+      specialization: teacherFormSpecialization?.value.trim() || "",
+      qualifications: teacherFormQualifications?.value.trim() || "",
+      teachingStyle: teacherFormTeachingStyle?.value.trim() || "",
+      introVideoUrl: teacherFormIntroVideoUrl?.value.trim() || "",
+      bio: teacherFormBio?.value.trim() || "",
+      photoUrl: teacherFormPhotoUrl || ""
+    };
+
+    saveTeacherBtn.disabled = true;
+
+    try {
+      if (teacherFormEditingId) {
+        await updateDoc(doc(db, "teachers", teacherFormEditingId), teacherData);
+      } else {
+        await addDoc(collection(db, "teachers"), {
+          ...teacherData,
+          createdAt: Date.now()
+        });
+      }
+
+      hideTeacherForm();
+    } catch (error) {
+      console.error("Failed to save teacher:", error);
+      alert("Couldn't save teacher: " + error.message);
+    } finally {
+      saveTeacherBtn.disabled = false;
+    }
   });
 }
 
@@ -1523,6 +1759,7 @@ function startTeachersListener() {
       });
 
       renderTeachers();
+      renderMyCertificates();
     },
     (error) => {
       console.error("Teachers listener error:", error);
@@ -3304,6 +3541,158 @@ if (changePasswordBtn) {
       alert("Couldn't change password: " + message);
     } finally {
       changePasswordBtn.disabled = false;
+    }
+  });
+}
+
+// ============================================================
+// PROFILE — MY CERTIFICATES (teacher-only, self-service)
+//
+// Stored as a `certificates` array field directly on the teacher's
+// own document in the "teachers" collection — the same doc the
+// admin's Add/Edit form edits, and the same one buildCertificatesBlock()
+// reads from to show them publicly on the Teachers directory card.
+// firestore.rules restricts a teacher to only touching this one
+// field on only their own doc (matched by authUid), never anything
+// else the admin controls.
+// ============================================================
+
+const certificateInput = $("certificateInput");
+const certificateStatus = $("certificateStatus");
+
+function findMyTeacherDoc() {
+  return teachers.find((t) => t.authUid === currentUser?.uid) || null;
+}
+
+function renderMyCertificates() {
+  const role = sessionStorage.getItem("prolingo_role");
+  const list = $("myCertificatesList");
+
+  if (role !== "teacher" || !list) return;
+
+  const myTeacherDoc = findMyTeacherDoc();
+  const certs = myTeacherDoc?.certificates || [];
+
+  list.replaceChildren();
+
+  if (certs.length === 0) {
+    showElement("myCertificatesEmpty", true);
+    return;
+  }
+
+  showElement("myCertificatesEmpty", false);
+
+  certs.forEach((cert, index) => {
+    const li = document.createElement("li");
+    li.className = "lesson-row";
+
+    const info = document.createElement("div");
+    info.className = "lesson-info";
+
+    const title = document.createElement("strong");
+    title.textContent = cert.fileName || "Certificate";
+
+    const details = document.createElement("span");
+    details.textContent = cert.uploadedAt
+      ? new Date(cert.uploadedAt).toLocaleDateString()
+      : "";
+
+    info.append(title, details);
+
+    const viewLink = document.createElement("a");
+    viewLink.href = cert.url;
+    viewLink.target = "_blank";
+    viewLink.rel = "noopener";
+    viewLink.className = "ghost-btn";
+    viewLink.textContent = "View";
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "ghost-btn";
+    removeBtn.textContent = "Remove";
+
+    removeBtn.addEventListener("click", async () => {
+      if (!myTeacherDoc) return;
+
+      const updated = certs.filter((_, i) => i !== index);
+
+      removeBtn.disabled = true;
+
+      try {
+        await updateDoc(doc(db, "teachers", myTeacherDoc.id), {
+          certificates: updated
+        });
+      } catch (error) {
+        console.error("Failed to remove certificate:", error);
+        alert("Couldn't remove that certificate: " + error.message);
+        removeBtn.disabled = false;
+      }
+    });
+
+    li.append(info, viewLink, removeBtn);
+    list.appendChild(li);
+  });
+}
+
+if (certificateInput) {
+  certificateInput.addEventListener("change", async () => {
+    const file = certificateInput.files?.[0];
+
+    if (!file) return;
+
+    if (!currentUser) {
+      alert("Please sign in first.");
+      certificateInput.value = "";
+      return;
+    }
+
+    const myTeacherDoc = findMyTeacherDoc();
+
+    if (!myTeacherDoc) {
+      alert(
+        "Your teacher profile hasn't been created in the directory yet — ask an admin to add you first."
+      );
+      certificateInput.value = "";
+      return;
+    }
+
+    if (certificateStatus) {
+      certificateStatus.textContent = `Uploading ${file.name}… 0%`;
+    }
+
+    try {
+      const result = await uploadToCloudinary(file, (percent) => {
+        if (certificateStatus) {
+          certificateStatus.textContent = `Uploading ${file.name}… ${percent}%`;
+        }
+      });
+
+      const updatedCertificates = [
+        ...(myTeacherDoc.certificates || []),
+        {
+          url: result.secure_url,
+          fileName: file.name,
+          uploadedAt: Date.now()
+        }
+      ];
+
+      await updateDoc(doc(db, "teachers", myTeacherDoc.id), {
+        certificates: updatedCertificates
+      });
+
+      if (certificateStatus) {
+        certificateStatus.textContent = "Certificate uploaded!";
+      }
+    } catch (error) {
+      console.error("Certificate upload failed:", error);
+
+      if (certificateStatus) {
+        certificateStatus.textContent = `Upload failed: ${error.message}`;
+      }
+
+      alert("Upload failed: " + error.message);
+    } finally {
+      certificateInput.value = "";
     }
   });
 }
