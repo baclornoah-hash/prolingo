@@ -746,6 +746,25 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   border: 1px solid #8ed5a8;
 }
 
+.slot--vacant {
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--text-soft);
+  width: 100%;
+  height: 100%;
+  min-height: 28px;
+  font-weight: 700;
+  border-radius: 6px;
+  opacity: 0.5;
+}
+.slot--vacant:hover,
+.slot--vacant:focus-visible {
+  opacity: 1;
+  border-color: var(--violet);
+  color: var(--violet);
+  background: var(--violet-lt);
+}
+
 /* Schedule a class */
 .schedule-form {
   display: flex;
@@ -996,6 +1015,127 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   height: 32px;
   font-size: 1rem;
   color: var(--text-soft);
+}
+
+/* Live Chat widget */
+.chat-widget {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+.chat-bubble {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--orange);
+  color: #2a1400;
+  border: none;
+  font-size: 1.5rem;
+  box-shadow: var(--shadow-pop);
+}
+.chat-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #e0301c;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-panel {
+  width: 300px;
+  max-height: 60vh;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.chat-panel-header {
+  padding: 14px 16px;
+  background: var(--violet);
+  color: #fff;
+}
+.chat-availability-row {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.82rem;
+}
+.chat-panel-status {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  border-bottom: 1px solid var(--line);
+}
+.chat-panel-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+}
+.chat-message {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  background: var(--paper);
+}
+.chat-message strong {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--text-soft);
+  margin-bottom: 2px;
+}
+.chat-message p {
+  margin: 0;
+}
+.chat-message--mine {
+  align-self: flex-end;
+  background: var(--violet-lt);
+}
+.chat-panel-input-row {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+}
+.chat-panel-input-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.82rem;
+}
+.chat-panel-input-row button {
+  background: var(--violet);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+#chatEndBtn {
+  margin: 0 10px 10px;
 }
 
 /* Add/Edit Teacher form */
