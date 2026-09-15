@@ -627,6 +627,40 @@
   </div>
 </div>
 
+<!-- Global Live Chat widget — populated/driven by script.js. Hidden
+     entirely until initChatWidget() shows it for a signed-in
+     student or teacher. -->
+<div class="chat-widget" id="chatWidget" style="display:none;">
+  <button type="button" class="chat-bubble" id="chatBubbleBtn">
+    💬
+    <span class="chat-badge" id="chatBadge" style="display:none;">0</span>
+  </button>
+
+  <div class="chat-panel" id="chatPanel" style="display:none;">
+    <div class="chat-panel-header">
+      <strong id="chatPanelTitle">Live Chat</strong>
+    </div>
+
+    <div class="chat-availability-row" id="chatAvailabilityRow" style="display:none;">
+      <label>
+        <input type="checkbox" id="chatAvailableToggle">
+        Available for live chat
+      </label>
+    </div>
+
+    <p class="chat-panel-status" id="chatPanelStatus"></p>
+
+    <div class="chat-panel-messages" id="chatPanelMessages"></div>
+
+    <div class="chat-panel-input-row" id="chatPanelInputRow" style="display:none;">
+      <input type="text" id="chatPanelInput" placeholder="Type a message…">
+      <button type="button" id="chatPanelSendBtn">Send</button>
+    </div>
+
+    <button type="button" class="ghost-btn" id="chatEndBtn" style="display:none;">End chat</button>
+  </div>
+</div>
+
 <!-- Populated by openLessonDetail() in script.js when a teacher/admin
      taps a booked slot in Calendar or a Teacher's Schedule. -->
 <div class="modal-overlay" id="lessonDetailOverlay" style="display:none;">
