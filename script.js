@@ -22,7 +22,10 @@ import {
   updateDoc,
   deleteDoc,
   query,
-  where
+  where,
+  orderBy,
+  limit,
+  runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // (Firebase Storage import removed — uploads now go to Cloudinary,
@@ -773,7 +776,7 @@ function buildCalendar() {
 
     tr.appendChild(timeTd);
 
-    weekDays.forEach((date) => {
+    weekDays.forEach((date, colIndex) => {
       const td = document.createElement("td");
       const dateKey = getDateKey(date);
 
@@ -807,13 +810,22 @@ function buildCalendar() {
 
         td.appendChild(slot);
       });
+
+      // ============================================================
+      // GENERAL CALENDAR AVAILABILITY
+      //
       // ONLY THE TEACHER'S OWN AVAILABILITY BELONGS HERE.
       //
       // STUDENTS NEVER SEE AVAILABILITY IN THE GENERAL CALENDAR.
       // selectedTeacherId IS NOT USED HERE.
+      //
+      // One tap does the whole job now instead of the old multi-step
+      // prompt() flow: an empty cell (no booking) opens a schedule
+      // slot; an already-open slot closes it. A booked cell is
+      // already handled above (tap to view — see bookingMatches).
       // ============================================================
 
-      if (role === "teacher") {
+      if (role === "teacher" && bookingMatches.length === 0) {
         const ownAvailability = availability.filter(
           (slot) =>
             slot.date === dateKey &&
@@ -821,14 +833,60 @@ function buildCalendar() {
             slot.teacherId === currentUser?.uid
         );
 
-        ownAvailability.forEach((match) => {
-          const slot = document.createElement("div");
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
 
-          slot.className = "slot slot--available";
-          slot.textContent = match.label || "Open";
+        if (ownAvailability.length > 0) {
+          const existing = ownAvailability[0];
 
-          td.appendChild(slot);
-        });
+          toggleBtn.className = "slot slot--available";
+          toggleBtn.textContent = existing.label || "Open";
+          toggleBtn.title = "Tap to close this schedule";
+
+          toggleBtn.addEventListener("click", async () => {
+            toggleBtn.disabled = true;
+
+            try {
+              await deleteDoc(doc(db, "availability", existing.id));
+            } catch (error) {
+              console.error("Failed to close schedule slot:", error);
+              alert("Couldn't close this slot: " + error.message);
+              toggleBtn.disabled = false;
+            }
+          });
+        } else {
+          toggleBtn.className = "slot slot--vacant";
+          toggleBtn.textContent = "+";
+          toggleBtn.title = "Tap to open this schedule";
+
+          toggleBtn.addEventListener("click", async () => {
+            if (!currentUser) {
+              alert("Please sign in first.");
+              return;
+            }
+
+            toggleBtn.disabled = true;
+
+            try {
+              await addDoc(collection(db, "availability"), {
+                teacherId: currentUser.uid,
+                teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
+                date: dateKey,
+                day: colIndex,
+                slot: rowIndex,
+                type: "availability",
+                status: "available",
+                createdAt: Date.now()
+              });
+            } catch (error) {
+              console.error("Failed to open schedule slot:", error);
+              alert("Couldn't open this slot: " + error.message);
+              toggleBtn.disabled = false;
+            }
+          });
+        }
+
+        td.appendChild(toggleBtn);
       }
 
       tr.appendChild(td);
@@ -1141,6 +1199,36 @@ async function openLessonDetail(lesson) {
     timeSlots[lesson.slot] || ""
   }`;
   content.appendChild(whenLine);
+
+  if (canEdit) {
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "ghost-btn";
+    cancelBtn.textContent = "Cancel this booking";
+
+    cancelBtn.addEventListener("click", async () => {
+      const confirmed = confirm(
+        `Cancel ${lesson.studentName || "this student"}'s booking for ${
+          lesson.date || ""
+        } · ${timeSlots[lesson.slot] || ""}? This can't be undone.`
+      );
+
+      if (!confirmed) return;
+
+      cancelBtn.disabled = true;
+
+      try {
+        await deleteDoc(doc(db, "lessons", lesson.id));
+        closeLessonDetail();
+      } catch (error) {
+        console.error("Failed to cancel booking:", error);
+        alert("Couldn't cancel: " + error.message);
+        cancelBtn.disabled = false;
+      }
+    });
+
+    content.appendChild(cancelBtn);
+  }
 
   // ---- Course book / material (teacher/admin editable) ----
   const bookHeading = document.createElement("h3");
@@ -3585,7 +3673,7 @@ function renderProfilePhoto() {
     profilePhotoPreview.src = myProfile.photoUrl || "default-teacher.png";
   }
 
-    // Mirror the photo (or fall back to initials) onto the topbar chip
+  // Mirror the photo (or fall back to initials) onto the topbar chip
   // too, without touching how auth-guard.js fills in the rest of it.
   const avatarEl = document.querySelector(".user-avatar");
 
@@ -3627,7 +3715,7 @@ function renderExtraList(listEl, items, onRemove) {
   items.forEach((item, index) => {
     const li = document.createElement("li");
     li.className = "lesson-row";
-    
+
     const info = document.createElement("div");
     info.className = "lesson-info";
 
@@ -4049,6 +4137,411 @@ if (certificateInput) {
 }
 
 // ============================================================
+// LIVE CHAT / SUPPORT QUEUE — global floating widget
+//
+// supportSessions/{id}: { studentId, studentName, teacherId,
+//   teacherName, status: waiting|active|ended, createdAt, assignedAt }
+// supportSessions/{id}/messages/{id}: { senderId, senderName,
+//   senderRole, text, createdAt }
+// teacherAvailability/{teacherUid}: { available, teacherName, updatedAt }
+//
+// Matching rule: a teacher only gets connected when they actually
+// open the widget (or flip "Available" on) — at that moment they
+// atomically claim the OLDEST still-"waiting" session via a Firestore
+// transaction, so two teachers opening at once can't grab the same
+// student. If the claim loses the race, it immediately retries on
+// the next-oldest waiting session. This is what gives "first student
+// to chat gets the first teacher to open, second gets the second."
+// ============================================================
+
+const chatWidget = $("chatWidget");
+const chatBubbleBtn = $("chatBubbleBtn");
+const chatBadge = $("chatBadge");
+const chatPanel = $("chatPanel");
+const chatPanelTitle = $("chatPanelTitle");
+const chatAvailableToggle = $("chatAvailableToggle");
+const chatPanelStatus = $("chatPanelStatus");
+const chatPanelMessages = $("chatPanelMessages");
+const chatPanelInput = $("chatPanelInput");
+const chatPanelSendBtn = $("chatPanelSendBtn");
+const chatEndBtn = $("chatEndBtn");
+
+let myChatSessionId = null;
+let isChatAvailable = false;
+let chatSessionUnsubscribe = null;
+let chatMessagesUnsubscribe = null;
+
+function setChatPanelStatus(text) {
+  if (chatPanelStatus) chatPanelStatus.textContent = text;
+}
+
+function renderChatMessages(messages) {
+  if (!chatPanelMessages) return;
+
+  chatPanelMessages.replaceChildren();
+
+  messages.forEach((msg) => {
+    const bubble = document.createElement("div");
+    bubble.className = "chat-message";
+    bubble.classList.add(
+      msg.senderId === currentUser?.uid
+        ? "chat-message--mine"
+        : "chat-message--theirs"
+    );
+
+    const senderLabel = document.createElement("strong");
+    senderLabel.textContent =
+      msg.senderName || (msg.senderRole === "teacher" ? "Teacher" : "Student");
+
+    const text = document.createElement("p");
+    text.textContent = msg.text;
+
+    bubble.append(senderLabel, text);
+    chatPanelMessages.appendChild(bubble);
+  });
+
+  chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
+}
+
+function watchChatMessages(sessionId) {
+  if (chatMessagesUnsubscribe) chatMessagesUnsubscribe();
+
+  chatMessagesUnsubscribe = onSnapshot(
+    query(
+      collection(db, "supportSessions", sessionId, "messages"),
+      orderBy("createdAt")
+    ),
+    (snapshot) => {
+      const messages = [];
+      snapshot.forEach((docSnap) => messages.push(docSnap.data()));
+      renderChatMessages(messages);
+    },
+    (error) => console.error("Chat messages listener error:", error)
+  );
+}
+
+function watchChatSession(sessionId) {
+  if (chatSessionUnsubscribe) chatSessionUnsubscribe();
+
+  chatSessionUnsubscribe = onSnapshot(
+    doc(db, "supportSessions", sessionId),
+    (snapshot) => {
+      const data = snapshot.data();
+      if (!data) return;
+
+      const role = sessionStorage.getItem("prolingo_role");
+
+      if (data.status === "waiting") {
+        setChatPanelStatus("Waiting for a teacher to connect…");
+        showElement("chatPanelInputRow", true);
+        showElement("chatEndBtn", true);
+      } else if (data.status === "active") {
+        const otherName =
+          role === "student" ? data.teacherName : data.studentName;
+        setChatPanelStatus(`Connected to ${otherName || "—"}`);
+        showElement("chatPanelInputRow", true);
+        showElement("chatEndBtn", true);
+      } else if (data.status === "ended") {
+        setChatPanelStatus("This chat has ended.");
+        showElement("chatPanelInputRow", false);
+        showElement("chatEndBtn", false);
+      }
+    },
+    (error) => console.error("Chat session listener error:", error)
+  );
+}
+
+// Student side: find their own open session, or start a new one.
+async function ensureStudentSession() {
+  if (myChatSessionId) return myChatSessionId;
+
+  const snap = await getDocs(
+    query(collection(db, "supportSessions"), where("studentId", "==", currentUser.uid))
+  );
+
+  let existing = null;
+
+  snap.forEach((docSnap) => {
+    const d = docSnap.data();
+    if (d.status === "waiting" || d.status === "active") {
+      existing = docSnap.id;
+    }
+  });
+
+  if (existing) {
+    myChatSessionId = existing;
+    return existing;
+  }
+
+  const ref = await addDoc(collection(db, "supportSessions"), {
+    studentId: currentUser.uid,
+    studentName: sessionStorage.getItem("prolingo_name") || "Student",
+    teacherId: null,
+    teacherName: null,
+    status: "waiting",
+    createdAt: Date.now()
+  });
+
+  myChatSessionId = ref.id;
+  return ref.id;
+}
+
+// Teacher side: atomically claim the oldest waiting session. Retries
+// on the next-oldest one if another teacher wins the race.
+async function tryClaimWaitingSession() {
+  const waitingSnap = await getDocs(
+    query(
+      collection(db, "supportSessions"),
+      where("status", "==", "waiting"),
+      orderBy("createdAt"),
+      limit(1)
+    )
+  );
+
+  if (waitingSnap.empty) {
+    setChatPanelStatus("No students waiting right now.");
+    return;
+  }
+
+  const sessionRef = waitingSnap.docs[0].ref;
+  const myName = sessionStorage.getItem("prolingo_name") || "Teacher";
+
+  try {
+    const studentName = await runTransaction(db, async (transaction) => {
+      const freshSnap = await transaction.get(sessionRef);
+      const data = freshSnap.data();
+
+      if (!data || data.status !== "waiting") {
+        throw new Error("ALREADY_CLAIMED");
+      }
+
+      transaction.update(sessionRef, {
+        teacherId: currentUser.uid,
+        teacherName: myName,
+        status: "active",
+        assignedAt: Date.now()
+      });
+
+      return data.studentName || "Student";
+    });
+
+    myChatSessionId = sessionRef.id;
+    watchChatSession(myChatSessionId);
+    watchChatMessages(myChatSessionId);
+
+    await addDoc(collection(db, "supportSessions", myChatSessionId, "messages"), {
+      senderId: currentUser.uid,
+      senderName: myName,
+      senderRole: "teacher",
+      text: `Hello, this is ${myName}. How may I help you today?`,
+      createdAt: Date.now()
+    });
+
+    alert(`You will be connected to a student named ${studentName}.`);
+  } catch (error) {
+    if (error.message === "ALREADY_CLAIMED") {
+      tryClaimWaitingSession();
+    } else {
+      console.error("Failed to claim chat session:", error);
+    }
+  }
+}
+
+async function resumeActiveTeacherSession() {
+  if (!currentUser) return;
+
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, "supportSessions"),
+        where("teacherId", "==", currentUser.uid),
+        where("status", "==", "active")
+      )
+    );
+
+    if (!snap.empty) {
+      myChatSessionId = snap.docs[0].id;
+      watchChatSession(myChatSessionId);
+      watchChatMessages(myChatSessionId);
+    }
+  } catch (error) {
+    console.error("Failed to resume active chat session:", error);
+  }
+}
+
+async function loadMyAvailability() {
+  if (!currentUser) return;
+
+  try {
+    const snap = await getDoc(doc(db, "teacherAvailability", currentUser.uid));
+    isChatAvailable = snap.exists() ? Boolean(snap.data().available) : false;
+    if (chatAvailableToggle) chatAvailableToggle.checked = isChatAvailable;
+  } catch (error) {
+    console.error("Failed to load chat availability:", error);
+  }
+}
+
+function startWaitingBadgeListener() {
+  onSnapshot(
+    query(collection(db, "supportSessions"), where("status", "==", "waiting")),
+    (snapshot) => {
+      const count = snapshot.size;
+
+      if (chatBadge) {
+        chatBadge.textContent = String(count);
+        chatBadge.style.display = count > 0 ? "flex" : "none";
+      }
+    },
+    (error) => console.error("Waiting-chat badge listener error:", error)
+  );
+}
+
+function initChatWidget() {
+  const role = sessionStorage.getItem("prolingo_role");
+
+  if (!currentUser || (role !== "student" && role !== "teacher")) {
+    if (chatWidget) chatWidget.style.display = "none";
+    return;
+  }
+
+  if (chatWidget) chatWidget.style.display = "block";
+
+  if (role === "teacher") {
+    showElement("chatAvailabilityRow", true);
+    loadMyAvailability();
+    startWaitingBadgeListener();
+    resumeActiveTeacherSession();
+  }
+}
+
+if (chatBubbleBtn) {
+  chatBubbleBtn.addEventListener("click", async () => {
+    if (!currentUser) {
+      alert("Please sign in first.");
+      return;
+    }
+
+    const isOpening = chatPanel && chatPanel.style.display === "none";
+
+    if (chatPanel) chatPanel.style.display = isOpening ? "flex" : "none";
+    if (!isOpening) return;
+
+    const role = sessionStorage.getItem("prolingo_role");
+
+    if (role === "student") {
+      if (chatPanelTitle) chatPanelTitle.textContent = "Live Chat Support";
+
+      try {
+        const sessionId = await ensureStudentSession();
+        watchChatSession(sessionId);
+        watchChatMessages(sessionId);
+      } catch (error) {
+        console.error("Failed to start chat session:", error);
+        setChatPanelStatus("Couldn't start a chat right now.");
+      }
+    } else if (role === "teacher") {
+      if (chatPanelTitle) chatPanelTitle.textContent = "Student Support Queue";
+
+      if (myChatSessionId) return; // already connected — just show it
+
+      if (isChatAvailable) {
+        await tryClaimWaitingSession();
+      } else {
+        setChatPanelStatus("Turn on availability to help waiting students.");
+      }
+    }
+  });
+}
+
+if (chatAvailableToggle) {
+  chatAvailableToggle.addEventListener("change", async () => {
+    isChatAvailable = chatAvailableToggle.checked;
+
+    if (!currentUser) return;
+
+    try {
+      await setDoc(doc(db, "teacherAvailability", currentUser.uid), {
+        available: isChatAvailable,
+        teacherName: sessionStorage.getItem("prolingo_name") || "Teacher",
+        updatedAt: Date.now()
+      });
+    } catch (error) {
+      console.error("Failed to update availability:", error);
+    }
+
+    if (isChatAvailable && !myChatSessionId) {
+      tryClaimWaitingSession();
+    }
+  });
+}
+
+if (chatPanelSendBtn) {
+  chatPanelSendBtn.addEventListener("click", async () => {
+    const text = chatPanelInput?.value.trim();
+
+    if (!text || !myChatSessionId || !currentUser) return;
+
+    chatPanelInput.value = "";
+
+    try {
+      await addDoc(
+        collection(db, "supportSessions", myChatSessionId, "messages"),
+        {
+          senderId: currentUser.uid,
+          senderName: sessionStorage.getItem("prolingo_name") || "",
+          senderRole: sessionStorage.getItem("prolingo_role"),
+          text,
+          createdAt: Date.now()
+        }
+      );
+    } catch (error) {
+      console.error("Failed to send chat message:", error);
+      alert("Couldn't send message: " + error.message);
+    }
+  });
+}
+
+if (chatPanelInput) {
+  chatPanelInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      chatPanelSendBtn?.click();
+    }
+  });
+}
+
+if (chatEndBtn) {
+  chatEndBtn.addEventListener("click", async () => {
+    if (!myChatSessionId) return;
+
+    try {
+      await updateDoc(doc(db, "supportSessions", myChatSessionId), {
+        status: "ended",
+        endedAt: Date.now()
+      });
+    } catch (error) {
+      console.error("Failed to end chat:", error);
+    }
+
+    if (chatSessionUnsubscribe) {
+      chatSessionUnsubscribe();
+      chatSessionUnsubscribe = null;
+    }
+
+    if (chatMessagesUnsubscribe) {
+      chatMessagesUnsubscribe();
+      chatMessagesUnsubscribe = null;
+    }
+
+    myChatSessionId = null;
+    if (chatPanelMessages) chatPanelMessages.replaceChildren();
+    setChatPanelStatus("Chat ended.");
+    showElement("chatPanelInputRow", false);
+    showElement("chatEndBtn", false);
+  });
+}
+
+// ============================================================
 // CLASSROOM — CHAT
 // ============================================================
 
@@ -4213,8 +4706,9 @@ onAuthStateChanged(auth, (user) => {
     startBillingListener();
     startPaymentsListener();
     startProfileListener();
+    initChatWidget();
   } else {
     console.log("No signed-in user.");
+    if (chatWidget) chatWidget.style.display = "none";
   }
 });
-
