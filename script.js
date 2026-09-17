@@ -88,7 +88,7 @@ const views = {
 
   teachers: {
     title: "Teachers",
-    subtitle: "Meet your ProLingo instructors."
+    subtitle: "Meet your ProLingo Bridge instructors."
   },
 
   teacherSchedule: {
@@ -204,6 +204,11 @@ function buildFeedbackWidget(lesson) {
   wrapper.className = "feedback-widget";
   wrapper.style.display = "none";
 
+  const ratingForLabel = document.createElement("p");
+  ratingForLabel.className = "feedback-rating-for";
+  ratingForLabel.textContent = `Rating: ${lesson.teacherName || "Teacher"}`;
+  wrapper.appendChild(ratingForLabel);
+
   let selectedRating = 0;
   const starButtons = [];
 
@@ -312,9 +317,18 @@ function renderLessons() {
     title.textContent = lesson.title;
 
     const details = document.createElement("span");
-    details.textContent = `${lesson.when} · Student: ${lesson.student}`;
+    details.textContent =
+      role === "student"
+        ? `${lesson.when} · Teacher: ${lesson.teacherName || "—"}`
+        : `${lesson.when} · Student: ${lesson.student}`;
 
     info.append(title, details);
+
+    if (lesson.teacherId && lesson.studentId) {
+      title.style.cursor = "pointer";
+      title.title = "Tap to view class details";
+      title.addEventListener("click", () => openLessonDetail(lesson));
+    }
 
     const button = document.createElement("button");
     button.className = "join-btn";
@@ -800,11 +814,12 @@ function buildCalendar() {
           match.type === "booking" &&
           match.studentId &&
           (role === "admin" ||
-            (role === "teacher" && match.teacherId === currentUser?.uid));
+            (role === "teacher" && match.teacherId === currentUser?.uid) ||
+            (role === "student" && match.studentId === currentUser?.uid));
 
         if (canPreview) {
           slot.style.cursor = "pointer";
-          slot.title = "Tap to view student details";
+          slot.title = "Tap to view class details";
           slot.addEventListener("click", () => openLessonDetail(match));
         }
 
@@ -1024,11 +1039,12 @@ function buildTeacherSchedule() {
           match.type === "booking" &&
           match.studentId &&
           (viewerRole === "admin" ||
-            (viewerRole === "teacher" && match.teacherId === currentUser?.uid));
+            (viewerRole === "teacher" && match.teacherId === currentUser?.uid) ||
+            (viewerRole === "student" && match.studentId === currentUser?.uid));
 
         if (canPreview) {
           slot.style.cursor = "pointer";
-          slot.title = "Tap to view student details";
+          slot.title = "Tap to view class details";
           slot.addEventListener("click", () => openLessonDetail(match));
         }
 
@@ -1181,12 +1197,16 @@ async function openLessonDetail(lesson) {
   const canEdit =
     role === "admin" ||
     (role === "teacher" && lesson.teacherId === currentUser?.uid);
+  const isOwnBookingStudent =
+    role === "student" && lesson.studentId === currentUser?.uid;
 
   const heading = document.createElement("h2");
-  heading.textContent = lesson.studentName || "Student";
+  heading.textContent = isOwnBookingStudent
+    ? `Class with ${lesson.teacherName || "your teacher"}`
+    : lesson.studentName || "Student";
   content.appendChild(heading);
 
-  if (lesson.studentEnglishName) {
+  if (!isOwnBookingStudent && lesson.studentEnglishName) {
     const englishNameLine = document.createElement("p");
     englishNameLine.className = "panel-copy";
     englishNameLine.textContent = `English name: ${lesson.studentEnglishName}`;
@@ -1199,6 +1219,39 @@ async function openLessonDetail(lesson) {
     timeSlots[lesson.slot] || ""
   }`;
   content.appendChild(whenLine);
+
+  // ---- Teacher info — especially useful for the student's own view ----
+  const teacherRecord = teachers.find((t) => t.authUid === lesson.teacherId);
+
+  if (teacherRecord) {
+    const teacherInfoBox = document.createElement("div");
+    teacherInfoBox.className = "lesson-detail-teacher";
+
+    if (teacherRecord.photoUrl) {
+      const teacherPhoto = document.createElement("img");
+      teacherPhoto.src = teacherRecord.photoUrl;
+      teacherPhoto.alt = teacherRecord.name || "Teacher";
+      teacherPhoto.className = "lesson-detail-teacher-photo";
+      teacherInfoBox.appendChild(teacherPhoto);
+    }
+
+    const teacherTextBox = document.createElement("div");
+
+    const teacherNameLine = document.createElement("strong");
+    teacherNameLine.textContent = teacherRecord.name || lesson.teacherName || "Teacher";
+    teacherTextBox.appendChild(teacherNameLine);
+
+    if (teacherRecord.specialization) {
+      const specLine = document.createElement("span");
+      specLine.className = "teacher-specialization";
+      specLine.textContent = teacherRecord.specialization;
+      teacherTextBox.appendChild(document.createElement("br"));
+      teacherTextBox.appendChild(specLine);
+    }
+
+    teacherInfoBox.appendChild(teacherTextBox);
+    content.appendChild(teacherInfoBox);
+  }
 
   if (canEdit) {
     const cancelBtn = document.createElement("button");
@@ -1327,68 +1380,72 @@ async function openLessonDetail(lesson) {
   }
 
   // ---- Previous remarks left by any teacher for this student ----
-  const remarksHeading = document.createElement("h3");
-  remarksHeading.textContent = "Previous remarks";
-  content.appendChild(remarksHeading);
+  // Teacher/admin only — matches the classRemarks Firestore rule, and
+  // these are internal instructor notes, not meant for the student.
+  if (canEdit) {
+    const remarksHeading = document.createElement("h3");
+    remarksHeading.textContent = "Previous remarks";
+    content.appendChild(remarksHeading);
 
-  const remarksList = document.createElement("ul");
-  remarksList.className = "lesson-list";
-  content.appendChild(remarksList);
+    const remarksList = document.createElement("ul");
+    remarksList.className = "lesson-list";
+    content.appendChild(remarksList);
 
-  const remarksEmpty = document.createElement("p");
-  remarksEmpty.className = "empty-state";
-  remarksEmpty.textContent = "Loading…";
-  content.appendChild(remarksEmpty);
+    const remarksEmpty = document.createElement("p");
+    remarksEmpty.className = "empty-state";
+    remarksEmpty.textContent = "Loading…";
+    content.appendChild(remarksEmpty);
 
-  try {
-    const remarksSnap = await getDocs(
-      query(
-        collection(db, "classRemarks"),
-        where("studentId", "==", lesson.studentId)
-      )
-    );
+    try {
+      const remarksSnap = await getDocs(
+        query(
+          collection(db, "classRemarks"),
+          where("studentId", "==", lesson.studentId)
+        )
+      );
 
-    const remarkItems = [];
+      const remarkItems = [];
 
-    remarksSnap.forEach((docSnap) => {
-      const d = docSnap.data();
-      remarkItems.push({
-        teacherName: d.teacherName || "Teacher",
-        remark: d.remark || "",
-        createdAt: d.createdAt || 0
+      remarksSnap.forEach((docSnap) => {
+        const d = docSnap.data();
+        remarkItems.push({
+          teacherName: d.teacherName || "Teacher",
+          remark: d.remark || "",
+          createdAt: d.createdAt || 0
+        });
       });
-    });
 
-    remarkItems.sort((a, b) => b.createdAt - a.createdAt);
+      remarkItems.sort((a, b) => b.createdAt - a.createdAt);
 
-    if (remarkItems.length === 0) {
-      remarksEmpty.textContent = "No previous remarks yet.";
-    } else {
-      remarksEmpty.remove();
+      if (remarkItems.length === 0) {
+        remarksEmpty.textContent = "No previous remarks yet.";
+      } else {
+        remarksEmpty.remove();
 
-      remarkItems.forEach((item) => {
-        const li = document.createElement("li");
-        li.className = "lesson-row";
+        remarkItems.forEach((item) => {
+          const li = document.createElement("li");
+          li.className = "lesson-row";
 
-        const info = document.createElement("div");
-        info.className = "lesson-info";
+          const info = document.createElement("div");
+          info.className = "lesson-info";
 
-        const title = document.createElement("strong");
-        title.textContent = item.teacherName;
+          const title = document.createElement("strong");
+          title.textContent = item.teacherName;
 
-        const details = document.createElement("span");
-        details.textContent = `${new Date(
-          item.createdAt
-        ).toLocaleDateString()} — ${item.remark}`;
+          const details = document.createElement("span");
+          details.textContent = `${new Date(
+            item.createdAt
+          ).toLocaleDateString()} — ${item.remark}`;
 
-        info.append(title, details);
-        li.appendChild(info);
-        remarksList.appendChild(li);
-      });
+          info.append(title, details);
+          li.appendChild(info);
+          remarksList.appendChild(li);
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load previous remarks:", error);
+      remarksEmpty.textContent = "Couldn't load previous remarks.";
     }
-  } catch (error) {
-    console.error("Failed to load previous remarks:", error);
-    remarksEmpty.textContent = "Couldn't load previous remarks.";
   }
 
   // ---- Leave a remark for THIS class (required before it's payable) ----
@@ -1546,6 +1603,12 @@ function startLessonsListener() {
           lessons.push({
             id: docSnap.id,
             teacherId: data.teacherId || null,
+            teacherName: data.teacherName || "",
+            studentId: data.studentId || null,
+            studentName: data.studentName || "—",
+            studentEnglishName: data.studentEnglishName || "",
+            courseBook: data.courseBook || "",
+            hasRemark: Boolean(data.hasRemark),
             date: bookingDate,
             slot: booking.slot,
             level: data.level || "—",
