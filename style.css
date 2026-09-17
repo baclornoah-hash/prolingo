@@ -275,9 +275,21 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   padding:10px 18px; border-radius:10px; font-size:0.85rem;
 }
 
+/* The calendar view fills the remaining screen height instead of
+   sitting as a short fixed box with blank page below it, and it's
+   the only thing that scrolls (both directions) — the toolbar/legend
+   stay put, the outer page doesn't need to scroll to see it. */
+#view-calendar.is-active {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 200px);
+  overflow: hidden;
+}
 .cal-scroll{
   background: var(--surface); border:1px solid var(--line); border-radius: var(--radius-lg);
-  overflow:auto; box-shadow: var(--shadow-card); max-height:560px;
+  overflow:auto; box-shadow: var(--shadow-card);
+  flex: 1;
+  min-height: 0;
   margin-bottom: 12px;
 }
 .cal-grid{ border-collapse:collapse; width:100%; min-width:820px; }
@@ -1379,6 +1391,9 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   .cal-scroll {
     border-radius: 14px;
   }
+  #view-calendar.is-active {
+    height: calc(100vh - 260px);
+  }
 
   .classroom-stage,
   .video-classroom {
@@ -1441,3 +1456,4 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
     font-size: 1.3rem;
   }
 }
+
