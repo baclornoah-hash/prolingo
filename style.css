@@ -830,6 +830,30 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   font-weight: 700;
   font-size: 0.85rem;
 }
+.feedback-rating-for {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--violet);
+}
+
+/* Lesson detail modal — teacher info box */
+.lesson-detail-teacher {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 10px 12px;
+  background: var(--paper);
+  border-radius: var(--radius-md);
+}
+.lesson-detail-teacher-photo {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
 
 /* Teacher card rating line */
 .teacher-rating {
@@ -1239,4 +1263,181 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; }
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+/* ============================================================
+   MOBILE POLISH — everything below fixes "feels too little and
+   uneven" on phones: bumps overall scale (rem-based, so it lifts
+   every text size at once), normalizes panel/card padding, and
+   stacks cramped inline forms into full-width fields instead of
+   squeezing them into a row.
+   ============================================================ */
+@media (max-width: 768px) {
+  html {
+    font-size: 17px;
+  }
+
+  .main {
+    padding: 18px 16px 48px;
+  }
+
+  .rail {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .rail-brand {
+    font-size: 1.05rem;
+  }
+  .rail-nav {
+    flex-wrap: wrap;
+    gap: 4px;
+    row-gap: 6px;
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .rail-link {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+
+  .topbar {
+    margin-bottom: 18px;
+  }
+  .topbar-title h1 {
+    font-size: 1.4rem;
+  }
+
+  .stat-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .stat-card {
+    padding: 14px;
+  }
+  .stat-num {
+    font-size: 1.4rem;
+  }
+
+  .panel {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .dash-grid {
+    gap: 14px;
+  }
+
+  .lesson-row {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px;
+  }
+  .lesson-info {
+    min-width: 140px;
+  }
+
+  /* Forms: stack full-width instead of squeezing several fields
+     into one narrow row. */
+  .schedule-form,
+  .profile-inline-form,
+  .profile-password-form,
+  .billing-gcash-form,
+  .billing-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .schedule-form input,
+  .schedule-form button,
+  .profile-inline-form input,
+  .profile-inline-form button,
+  .profile-password-form input,
+  .profile-password-form button,
+  .billing-gcash-form input,
+  .billing-gcash-form button,
+  .billing-controls input,
+  .billing-controls button {
+    width: 100%;
+  }
+
+  .billing-summary {
+    gap: 14px;
+  }
+  .billing-summary strong {
+    font-size: 1.15rem;
+  }
+
+  /* Calendar keeps its horizontal scroll (a full week grid can't
+     meaningfully reflow), but the surrounding chrome tightens up. */
+  .cal-toolbar {
+    gap: 10px;
+  }
+  .cal-legend {
+    font-size: 0.72rem;
+    gap: 10px;
+  }
+  .cal-scroll {
+    border-radius: 14px;
+  }
+
+  .classroom-stage,
+  .video-classroom {
+    border-radius: 16px;
+  }
+  .stage-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .room-entry {
+    width: 100%;
+  }
+  .room-entry input {
+    flex: 1;
+    min-width: 0;
+  }
+  .slide-frame {
+    min-height: 220px;
+    padding: 18px;
+  }
+  .slide-art h2 {
+    font-size: 1.3rem;
+  }
+
+  .modal-box {
+    padding: 18px;
+    max-height: 90vh;
+  }
+  .modal-box h2 {
+    font-size: 1.2rem;
+  }
+
+  .chat-widget {
+    right: 12px;
+    bottom: 12px;
+  }
+  .chat-panel {
+    width: min(88vw, 320px);
+    max-height: 70vh;
+  }
+  .chat-bubble {
+    width: 52px;
+    height: 52px;
+    font-size: 1.3rem;
+  }
+
+  .teacher-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .teacher-photo {
+    height: 170px;
+  }
+
+  .page-heading {
+    gap: 10px;
+  }
+  .page-heading h2 {
+    font-size: 1.3rem;
+  }
 }
