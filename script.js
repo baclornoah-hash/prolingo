@@ -199,6 +199,17 @@ let lessons = [];
 // FEEDBACK — 1-5 star class ratings (student -> teacher)
 // ============================================================
 
+// Falls back to looking the name up in the teachers directory when a
+// lesson doc has no stored teacherName (e.g. bookings made before
+// that field existed) — so the display is correct for old and new
+// data alike, not just anything booked going forward.
+function resolveTeacherName(teacherId, storedName) {
+  if (storedName) return storedName;
+
+  const match = teachers.find((t) => t.authUid === teacherId);
+  return match?.name || "Teacher";
+}
+
 function buildFeedbackWidget(lesson) {
   const wrapper = document.createElement("div");
   wrapper.className = "feedback-widget";
@@ -206,7 +217,7 @@ function buildFeedbackWidget(lesson) {
 
   const ratingForLabel = document.createElement("p");
   ratingForLabel.className = "feedback-rating-for";
-  ratingForLabel.textContent = `Rating: ${lesson.teacherName || "Teacher"}`;
+  ratingForLabel.textContent = `Rating: ${resolveTeacherName(lesson.teacherId, lesson.teacherName)}`;
   wrapper.appendChild(ratingForLabel);
 
   let selectedRating = 0;
@@ -319,7 +330,7 @@ function renderLessons() {
     const details = document.createElement("span");
     details.textContent =
       role === "student"
-        ? `${lesson.when} · Teacher: ${lesson.teacherName || "—"}`
+        ? `${lesson.when} · Teacher: ${resolveTeacherName(lesson.teacherId, lesson.teacherName)}`
         : `${lesson.when} · Student: ${lesson.student}`;
 
     info.append(title, details);
@@ -807,8 +818,15 @@ function buildCalendar() {
       bookingMatches.forEach((match) => {
         const slot = document.createElement("div");
 
-        slot.className = `slot slot--${match.type || "booked"}`;
-        slot.textContent = match.label || "Booked";
+        const isPending =
+          match.type === "booking" && match.approvalStatus === "pending";
+
+        slot.className = isPending
+          ? "slot slot--pending"
+          : `slot slot--${match.type || "booked"}`;
+        slot.textContent = isPending
+          ? `${match.label || "Booked"} (pending)`
+          : match.label || "Booked";
 
         const canPreview =
           match.type === "booking" &&
@@ -1031,8 +1049,15 @@ function buildTeacherSchedule() {
       bookingMatches.forEach((match) => {
         const slot = document.createElement("div");
 
-        slot.className = `slot slot--${match.type || "booked"}`;
-        slot.textContent = match.label || "Booked";
+        const isPending =
+          match.type === "booking" && match.approvalStatus === "pending";
+
+        slot.className = isPending
+          ? "slot slot--pending"
+          : `slot slot--${match.type || "booked"}`;
+        slot.textContent = isPending
+          ? `${match.label || "Booked"} (pending)`
+          : match.label || "Booked";
 
         const viewerRole = sessionStorage.getItem("prolingo_role");
         const canPreview =
@@ -1089,8 +1114,29 @@ function buildTeacherSchedule() {
               return;
             }
 
+            // A student can't hold two classes at the same date+slot
+            // with two different teachers — bookings for the signed-in
+            // student are already loaded across ALL teachers (not just
+            // this one), so this check works regardless of which
+            // teacher's schedule they're currently viewing.
+            const conflictsWithAnotherTeacher = bookings.some(
+              (b) =>
+                b.type === "booking" &&
+                b.studentId === currentUser.uid &&
+                b.date === dateKey &&
+                b.slot === rowIndex &&
+                b.teacherId !== selectedTeacherId
+            );
+
+            if (conflictsWithAnotherTeacher) {
+              alert(
+                "You already have a class booked with another teacher at this date and time."
+              );
+              return;
+            }
+
             const confirmed = confirm(
-              `Book this lesson on ${dateKey} at ${time}?`
+              `Request this lesson on ${dateKey} at ${time}? The teacher will need to approve it before it's confirmed.`
             );
 
             if (!confirmed) return;
@@ -1099,6 +1145,12 @@ function buildTeacherSchedule() {
             slot.textContent = "Booking...";
 
             try {
+              // A room code is reserved up front (same idea as
+              // Schedule a Class) so that once the teacher approves,
+              // both sides already have a stable call to join — no
+              // separate "generate the link" step needed later.
+              const roomRef = doc(collection(db, "rooms"));
+
               await addDoc(collection(db, "lessons"), {
                 type: "booking",
                 teacherId: selectedTeacherId,
@@ -1111,11 +1163,15 @@ function buildTeacherSchedule() {
                 day: dateKey,
                 slot: rowIndex,
                 status: "scheduled",
+                approvalStatus: "pending",
+                roomId: roomRef.id,
                 hasRemark: false,
                 createdAt: Date.now()
               });
 
-              alert("Lesson booked successfully!");
+              alert(
+                "Booking request sent! You'll be able to join the call here once the teacher approves it."
+              );
             } catch (error) {
               console.error("Booking failed:", error);
 
@@ -1202,7 +1258,7 @@ async function openLessonDetail(lesson) {
 
   const heading = document.createElement("h2");
   heading.textContent = isOwnBookingStudent
-    ? `Class with ${lesson.teacherName || "your teacher"}`
+    ? `Class with ${resolveTeacherName(lesson.teacherId, lesson.teacherName)}`
     : lesson.studentName || "Student";
   content.appendChild(heading);
 
@@ -1251,6 +1307,101 @@ async function openLessonDetail(lesson) {
 
     teacherInfoBox.appendChild(teacherTextBox);
     content.appendChild(teacherInfoBox);
+  }
+
+  // ---- Approval status + the call itself ----
+  const isPending = lesson.approvalStatus === "pending";
+
+  const statusLine = document.createElement("p");
+  statusLine.className = "panel-copy";
+  statusLine.textContent = isPending
+    ? "Status: Pending teacher approval"
+    : "Status: Confirmed";
+  content.appendChild(statusLine);
+
+  if (canEdit && isPending) {
+    const approveBtn = document.createElement("button");
+    approveBtn.type = "button";
+    approveBtn.className = "solid-btn";
+    approveBtn.textContent = "Approve booking";
+
+    approveBtn.addEventListener("click", async () => {
+      approveBtn.disabled = true;
+
+      try {
+        // Older bookings made before this feature won't have a room
+        // reserved yet — reserve one now so approval always leaves
+        // both sides with a call ready to join.
+        const roomId = lesson.roomId || doc(collection(db, "rooms")).id;
+
+        await updateDoc(doc(db, "lessons", lesson.id), {
+          approvalStatus: "confirmed",
+          roomId
+        });
+
+        lesson.approvalStatus = "confirmed";
+        lesson.roomId = roomId;
+        closeLessonDetail();
+        alert("Booking approved — the student can now join the call here.");
+      } catch (error) {
+        console.error("Failed to approve booking:", error);
+        alert("Couldn't approve: " + error.message);
+        approveBtn.disabled = false;
+      }
+    });
+
+    const declineBtn = document.createElement("button");
+    declineBtn.type = "button";
+    declineBtn.className = "ghost-btn";
+    declineBtn.textContent = "Decline booking";
+
+    declineBtn.addEventListener("click", async () => {
+      const confirmedDecline = confirm(
+        `Decline ${lesson.studentName || "this student"}'s request for ${
+          lesson.date || ""
+        } · ${timeSlots[lesson.slot] || ""}? This frees up the slot again.`
+      );
+
+      if (!confirmedDecline) return;
+
+      declineBtn.disabled = true;
+
+      try {
+        await deleteDoc(doc(db, "lessons", lesson.id));
+        closeLessonDetail();
+      } catch (error) {
+        console.error("Failed to decline booking:", error);
+        alert("Couldn't decline: " + error.message);
+        declineBtn.disabled = false;
+      }
+    });
+
+    content.append(approveBtn, declineBtn);
+  }
+
+  if (!isPending && lesson.roomId) {
+    const callBtn = document.createElement("button");
+    callBtn.type = "button";
+    callBtn.className = "solid-btn";
+    callBtn.textContent = canEdit ? "Start call" : "Join call";
+
+    callBtn.addEventListener("click", async () => {
+      closeLessonDetail();
+      showView("classroom");
+
+      try {
+        if (canEdit) {
+          await createRoom({ explicitRoomId: lesson.roomId });
+        } else {
+          await joinRoom(lesson.roomId);
+        }
+      } catch (error) {
+        console.error("Failed to join scheduled call:", error);
+        alert("Couldn't join the call: " + error.message);
+      }
+    });
+
+    content.appendChild(callBtn);
   }
 
   if (canEdit) {
@@ -1591,7 +1742,9 @@ function startLessonsListener() {
           studentName: data.studentName || data.label || "—",
           studentEnglishName: data.studentEnglishName || "",
           courseBook: data.courseBook || "",
-          hasRemark: Boolean(data.hasRemark)
+          hasRemark: Boolean(data.hasRemark),
+          approvalStatus: data.approvalStatus || "pending",
+          roomId: data.roomId || null
         };
 
         bookings.push(booking);
@@ -2231,6 +2384,7 @@ function startTeachersListener() {
 
       renderTeachers();
       renderMyCertificates();
+      renderLessons();
     },
     (error) => {
       console.error("Teachers listener error:", error);
@@ -3876,7 +4030,7 @@ if (saveProfileNameBtn) {
       return;
     }
 
-    const newName = profileNameInput?.value.trim();
+ const newName = profileNameInput?.value.trim();
 
     if (!newName) {
       alert("Enter a name first.");
@@ -4775,3 +4929,4 @@ onAuthStateChanged(auth, (user) => {
     if (chatWidget) chatWidget.style.display = "none";
   }
 });
+ 
