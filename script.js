@@ -660,6 +660,7 @@ function startMaterialsListener() {
 
       renderMaterialsList();
       renderMaterialInStage();
+      updateBoardBackground();
     },
     (error) => {
       console.error("Lesson materials listener error:", error);
@@ -3310,6 +3311,8 @@ let boardSelectedId = null;
 let boardRedoStack = []; // {id, data} of actions THIS client undid
 let boardDrawing = false;
 let boardCurrentStroke = null;
+let boardBackgroundImage = null;
+let boardBackgroundUrl = null;
 
 function boardCanEdit() {
   if (!activeRoomId || !currentUser) return false;
@@ -3431,7 +3434,18 @@ function drawTextAction(ctx, action) {
 function applyFloodFill(ctx, seedX, seedY, hex) {
   const width = boardCanvas.width;
   const height = boardCanvas.height;
-  const imageData = ctx.getImageData(0, 0, width, height);
+
+  let imageData;
+  try {
+    imageData = ctx.getImageData(0, 0, width, height);
+  } catch (error) {
+    // A cross-origin background image without permissive CORS headers
+    // taints the canvas and blocks pixel reads entirely — fail
+    // quietly rather than breaking the whole board redraw over it.
+    console.error("Flood fill unavailable (canvas may be CORS-tainted):", error);
+    return;
+  }
+
   const data = imageData.data;
 
   const startX = Math.round(seedX);
@@ -3496,6 +3510,79 @@ function hexToRgb(hex) {
   };
 }
 
+// ---- Uploaded lesson material as the board's background ----
+//
+// The latest uploaded lesson material (from the "Lesson upload"
+// dropzone) becomes the board's actual background whenever it's an
+// image — students and teacher draw directly on top of it, the same
+// way flood fill and everything else already treats "whatever's
+// currently on the canvas." Only images can be drawn onto a canvas
+// this way; video and PDF/PPTX files stay in their existing preview
+// area instead (rasterizing a PDF/PPTX client-side would need a
+// separate library like pdf.js, which isn't wired up here).
+function drawBoardBackground(ctx, img) {
+  const canvasW = boardCanvas.width;
+  const canvasH = boardCanvas.height;
+  const imgRatio = img.naturalWidth / img.naturalHeight;
+  const canvasRatio = canvasW / canvasH;
+
+  let drawW, drawH;
+  if (imgRatio > canvasRatio) {
+    drawW = canvasW;
+    drawH = canvasW / imgRatio;
+  } else {
+    drawH = canvasH;
+    drawW = canvasH * imgRatio;
+  }
+
+  ctx.drawImage(
+    img,
+    (canvasW - drawW) / 2,
+    (canvasH - drawH) / 2,
+    drawW,
+    drawH
+  );
+}
+
+function updateBoardBackground() {
+  const latest = materials[0];
+  const isImage = latest && latest.fileType === "image" && latest.fileUrl;
+
+  if (!isImage) {
+    if (boardBackgroundUrl !== null) {
+      boardBackgroundUrl = null;
+      boardBackgroundImage = null;
+      redrawBoard();
+    }
+    return;
+  }
+
+  if (boardBackgroundUrl === latest.fileUrl) {
+    if (boardBackgroundImage) redrawBoard(); // reuse cached image
+    return;
+  }
+
+  boardBackgroundUrl = latest.fileUrl;
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+
+  img.onload = () => {
+    if (boardBackgroundUrl !== latest.fileUrl) return; // superseded meanwhile
+    boardBackgroundImage = img;
+    redrawBoard();
+  };
+
+  img.onerror = () => {
+    console.error("Failed to load lesson material as whiteboard background.");
+    if (boardBackgroundUrl === latest.fileUrl) {
+      boardBackgroundImage = null;
+    }
+  };
+
+  img.src = latest.fileUrl;
+}
+
 function redrawBoard() {
   if (!boardCanvas) return;
   const ctx = boardCanvas.getContext("2d");
@@ -3503,6 +3590,11 @@ function redrawBoard() {
   ctx.save();
   ctx.globalCompositeOperation = "source-over";
   ctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+
+  if (boardBackgroundImage) {
+    drawBoardBackground(ctx, boardBackgroundImage);
+  }
+
   ctx.restore();
 
   boardActions.forEach((action) => {
@@ -3515,7 +3607,6 @@ function redrawBoard() {
     }
   });
 
-  
   if (boardSelectedId) {
     const selected = boardActions.find((a) => a.id === boardSelectedId);
     if (selected) drawSelectionHighlight(ctx, selected);
@@ -3559,6 +3650,7 @@ function drawSelectionHighlight(ctx, action) {
 
 function startBoardListener(roomId) {
   stopBoardListener();
+  updateBoardBackground();
 
   boardUnsubscribe = onSnapshot(
     query(collection(db, "rooms", roomId, "boardActions"), orderBy("createdAt")),
@@ -3957,6 +4049,7 @@ function startScheduledClassesListener() {
     }
   );
 }
+
 if (scheduleClassBtn) {
   scheduleClassBtn.addEventListener("click", async () => {
     if (!currentUser) {
@@ -5456,4 +5549,3 @@ onAuthStateChanged(auth, (user) => {
     if (chatWidget) chatWidget.style.display = "none";
   }
 });
-
