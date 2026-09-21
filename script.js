@@ -2922,6 +2922,7 @@ function resetPeerConnection() {
   if (remoteVideo) remoteVideo.srcObject = null;
   setRemoteVisible(false);
   updateRoomStatus("idle");
+  stopBoardListener();
 }
 
 // Best effort only: restartIce() re-negotiates from the caller's
@@ -3032,6 +3033,7 @@ function attachRoomListener(roomRef, pc) {
     }
 
     renderRoomRoster(data);
+    applyBoardLockState(Boolean(data.boardLocked));
 
     if (
       data.answer &&
@@ -3099,8 +3101,7 @@ async function createRoom(options = {}) {
   if (roomInput) roomInput.value = activeRoomId;
 
   attachRoomListener(roomRef, pc);
-
-  const calleeCandidates = collection(roomRef, "calleeCandidates");
+  startBoardListener(activeRoomId);
 
   unsubscribeCandidates = onSnapshot(calleeCandidates, (snapshot) => {
     snapshot.docChanges().forEach((change) => {
@@ -3163,8 +3164,7 @@ async function joinRoom(roomId) {
   setText("roomCode", roomId);
 
   attachRoomListener(roomRef, pc);
-
-  const callerCandidates = collection(roomRef, "callerCandidates");
+  startBoardListener(roomId);
 
   unsubscribeCandidates = onSnapshot(callerCandidates, (snapshot) => {
     snapshot.docChanges().forEach((change) => {
@@ -3257,6 +3257,534 @@ if (leaveRoomBtn) {
       leaveRoomBtn.disabled = false;
     }
   });
+}
+
+// ============================================================
+// CLASSROOM — SHARED WHITEBOARD
+//
+// rooms/{roomId}/boardActions/{id}: one doc per completed action
+//   { type: 'stroke'|'text', tool: 'pen'|'eraser' (strokes only),
+//     points: [{x,y}] (canvas-pixel coords, strokes only),
+//     x, y (text only), text, color, lineWidth, createdAt }
+// rooms/{roomId}.boardLocked: bool, host-only to change.
+//
+// The canvas is never treated as a single persistent bitmap that
+// gets patched — it's fully redrawn from the ordered action list on
+// every change. That's what makes two different devices converge on
+// the same picture: replay the same actions in the same order and
+// you get the same result, rather than trying to sync raw pixels.
+//
+// Two known, deliberate simplifications:
+//   - "Fill" is a bucket-fill of a SEED POINT — only strokes/text
+//     are individually selectable/deletable, not fills (there's no
+//     simple geometric "this click hit that fill" test the way
+//     there is for a stroke's path or a text box).
+//   - Redo is personal, not shared: undoing removes the action for
+//     everyone, but only the person who undid it can redo it back —
+//     the same way undo/redo works in every other collaborative app.
+// ============================================================
+
+const boardCanvas = $("boardCanvas");
+const wbColorRow = $("wbColorRow");
+const wbLockedNotice = $("wbLockedNotice");
+const wbLockBtn = $("wbLockBtn");
+const wbUndoBtn = $("wbUndoBtn");
+const wbRedoBtn = $("wbRedoBtn");
+const wbFillBtn = $("wbFillBtn");
+const wbDeleteBtn = $("wbDeleteBtn");
+
+const WB_TOOL_BUTTON_IDS = [
+  "wbSelectBtn",
+  "wbPenBtn",
+  "wbFillBtn",
+  "wbTextBtn",
+  "wbEraserBtn"
+];
+
+let boardActions = [];
+let boardUnsubscribe = null;
+let boardLocked = false;
+let boardTool = "select";
+let boardColor = "#241b38";
+let boardSelectedId = null;
+let boardRedoStack = []; // {id, data} of actions THIS client undid
+let boardDrawing = false;
+let boardCurrentStroke = null;
+
+function boardCanEdit() {
+  if (!activeRoomId || !currentUser) return false;
+  if (!boardLocked) return true;
+  // Locked: only the host (whoever created this room — normally the
+  // teacher) can still edit.
+  return isRoomHost;
+}
+
+function getCanvasPoint(event) {
+  const rect = boardCanvas.getBoundingClientRect();
+  const scaleX = boardCanvas.width / rect.width;
+  const scaleY = boardCanvas.height / rect.height;
+
+  return {
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY
+  };
+}
+
+function setBoardTool(tool) {
+  if (tool !== "select" && !boardCanEdit()) return;
+
+  boardTool = tool;
+  boardSelectedId = null;
+
+  WB_TOOL_BUTTON_IDS.forEach((id) => {
+    const btn = $(id);
+    if (btn) btn.classList.toggle("is-active", btn.dataset.tool === tool);
+  });
+
+  if (wbColorRow) {
+    wbColorRow.style.display =
+      tool === "pen" || tool === "fill" || tool === "text" ? "flex" : "none";
+  }
+
+  redrawBoard();
+}
+
+WB_TOOL_BUTTON_IDS.forEach((id) => {
+  const btn = $(id);
+  if (btn) {
+    btn.addEventListener("click", () => setBoardTool(btn.dataset.tool));
+  }
+});
+
+document.querySelectorAll(".wb-color-swatch").forEach((swatch) => {
+  swatch.addEventListener("click", () => {
+    boardColor = swatch.dataset.color;
+    document
+      .querySelectorAll(".wb-color-swatch")
+      .forEach((s) => s.classList.toggle("is-active", s === swatch));
+  });
+});
+
+// ---- Rendering ----
+
+function strokeHitTest(action, point, threshold) {
+  return action.points.some(
+    (p) => Math.hypot(p.x - point.x, p.y - point.y) <= threshold
+  );
+}
+
+function textHitTest(action, point) {
+  const fontSize = action.fontSize || 20;
+  const approxWidth = (action.text || "").length * fontSize * 0.55;
+
+  return (
+    point.x >= action.x &&
+    point.x <= action.x + approxWidth &&
+    point.y >= action.y - fontSize &&
+    point.y <= action.y
+  );
+}
+
+function drawStrokeAction(ctx, action) {
+  if (!action.points || action.points.length === 0) return;
+
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.lineWidth = action.lineWidth || 3;
+
+  if (action.tool === "eraser") {
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.strokeStyle = "rgba(0,0,0,1)";
+  } else {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = action.color || "#241b38";
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(action.points[0].x, action.points[0].y);
+  action.points.forEach((p) => ctx.lineTo(p.x, p.y));
+
+  if (action.points.length === 1) {
+    // A tap with no drag — draw a dot so it's still visible.
+    ctx.lineTo(action.points[0].x + 0.1, action.points[0].y + 0.1);
+  }
+
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawTextAction(ctx, action) {
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = action.color || "#241b38";
+  ctx.font = `${action.fontSize || 20}px 'Inter', system-ui, sans-serif`;
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(action.text || "", action.x, action.y);
+  ctx.restore();
+}
+
+// Flood fill directly on the canvas's live pixel buffer — this only
+// works correctly because it runs as part of the ordered replay
+// below, so the pixels it reads reflect everything drawn before it
+// in the same order on every device.
+function applyFloodFill(ctx, seedX, seedY, hex) {
+  const width = boardCanvas.width;
+  const height = boardCanvas.height;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  const startX = Math.round(seedX);
+  const startY = Math.round(seedY);
+  if (startX < 0 || startY < 0 || startX >= width || startY >= height) return;
+
+  const idx = (x, y) => (y * width + x) * 4;
+  const startIdx = idx(startX, startY);
+  const targetR = data[startIdx];
+  const targetG = data[startIdx + 1];
+  const targetB = data[startIdx + 2];
+  const targetA = data[startIdx + 3];
+
+  const fillColor = hexToRgb(hex);
+  const tolerance = 40;
+
+  const matches = (i) =>
+    Math.abs(data[i] - targetR) <= tolerance &&
+    Math.abs(data[i + 1] - targetG) <= tolerance &&
+    Math.abs(data[i + 2] - targetB) <= tolerance &&
+    Math.abs(data[i + 3] - targetA) <= tolerance;
+
+  if (
+    Math.abs(targetR - fillColor.r) <= tolerance &&
+    Math.abs(targetG - fillColor.g) <= tolerance &&
+    Math.abs(targetB - fillColor.b) <= tolerance
+  ) {
+    return; // already effectively this color
+  }
+
+  const stack = [[startX, startY]];
+  const visited = new Uint8Array(width * height);
+
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    if (x < 0 || y < 0 || x >= width || y >= height) continue;
+
+    const vIndex = y * width + x;
+    if (visited[vIndex]) continue;
+
+    const i = idx(x, y);
+    if (!matches(i)) continue;
+
+    visited[vIndex] = 1;
+    data[i] = fillColor.r;
+    data[i + 1] = fillColor.g;
+    data[i + 2] = fillColor.b;
+    data[i + 3] = 255;
+
+    stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function hexToRgb(hex) {
+  const clean = hex.replace("#", "");
+  return {
+    r: parseInt(clean.substring(0, 2), 16),
+    g: parseInt(clean.substring(2, 4), 16),
+    b: parseInt(clean.substring(4, 6), 16)
+  };
+}
+
+function redrawBoard() {
+  if (!boardCanvas) return;
+  const ctx = boardCanvas.getContext("2d");
+
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+  ctx.restore();
+
+  boardActions.forEach((action) => {
+    if (action.type === "stroke") {
+      drawStrokeAction(ctx, action);
+    } else if (action.type === "text") {
+      drawTextAction(ctx, action);
+    } else if (action.type === "fill") {
+      applyFloodFill(ctx, action.x, action.y, action.color || "#241b38");
+    }
+  });
+
+  
+  if (boardSelectedId) {
+    const selected = boardActions.find((a) => a.id === boardSelectedId);
+    if (selected) drawSelectionHighlight(ctx, selected);
+  }
+
+  if (wbFillBtn) wbFillBtn.disabled = boardActions.length === 0;
+  if (wbRedoBtn) wbRedoBtn.disabled = boardRedoStack.length === 0;
+}
+
+function drawSelectionHighlight(ctx, action) {
+  ctx.save();
+  ctx.strokeStyle = "#ff7a2e";
+  ctx.setLineDash([6, 4]);
+  ctx.lineWidth = 2;
+
+  if (action.type === "stroke") {
+    const xs = action.points.map((p) => p.x);
+    const ys = action.points.map((p) => p.y);
+    const pad = (action.lineWidth || 3) + 6;
+    ctx.strokeRect(
+      Math.min(...xs) - pad,
+      Math.min(...ys) - pad,
+      Math.max(...xs) - Math.min(...xs) + pad * 2,
+      Math.max(...ys) - Math.min(...ys) + pad * 2
+    );
+  } else if (action.type === "text") {
+    const fontSize = action.fontSize || 20;
+    const approxWidth = (action.text || "").length * fontSize * 0.55;
+    ctx.strokeRect(
+      action.x - 4,
+      action.y - fontSize - 2,
+      approxWidth + 8,
+      fontSize + 10
+    );
+  }
+
+  ctx.restore();
+}
+
+// ---- Firestore sync ----
+
+function startBoardListener(roomId) {
+  stopBoardListener();
+
+  boardUnsubscribe = onSnapshot(
+    query(collection(db, "rooms", roomId, "boardActions"), orderBy("createdAt")),
+    (snapshot) => {
+      boardActions = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
+      redrawBoard();
+    },
+    (error) => console.error("Whiteboard listener error:", error)
+  );
+}
+
+function stopBoardListener() {
+  if (boardUnsubscribe) {
+    boardUnsubscribe();
+    boardUnsubscribe = null;
+  }
+  boardActions = [];
+  boardRedoStack = [];
+  boardSelectedId = null;
+  setBoardTool("select");
+  if (boardCanvas) {
+    const ctx = boardCanvas.getContext("2d");
+    ctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+  }
+}
+
+function applyBoardLockState(locked) {
+  boardLocked = locked;
+
+  if (wbLockBtn) {
+    wbLockBtn.textContent = locked ? "🔒" : "🔓";
+    wbLockBtn.disabled = !isRoomHost;
+  }
+
+  const editable = boardCanEdit();
+
+  ["wbPenBtn", "wbFillBtn", "wbTextBtn", "wbEraserBtn", "wbUndoBtn", "wbDeleteBtn"].forEach(
+    (id) => {
+      const btn = $(id);
+      if (btn) btn.disabled = !editable || (id === "wbFillBtn" && boardActions.length === 0);
+    }
+  );
+
+  showElement("wbLockedNotice", locked && !isRoomHost);
+
+  if (!editable && boardTool !== "select") {
+    setBoardTool("select");
+  }
+}
+
+if (wbLockBtn) {
+  wbLockBtn.addEventListener("click", async () => {
+    if (!isRoomHost || !activeRoomId) return;
+
+    try {
+      await updateDoc(doc(db, "rooms", activeRoomId), {
+        boardLocked: !boardLocked
+      });
+    } catch (error) {
+      console.error("Failed to toggle board lock:", error);
+      alert("Couldn't change the lock: " + error.message);
+    }
+  });
+}
+
+async function addBoardAction(data) {
+  if (!activeRoomId || !currentUser) return;
+
+  boardRedoStack = []; // a fresh action invalidates any pending redo
+
+  await addDoc(collection(db, "rooms", activeRoomId, "boardActions"), {
+    ...data,
+    createdBy: currentUser.uid,
+    createdAt: Date.now()
+  });
+}
+
+if (wbUndoBtn) {
+  wbUndoBtn.addEventListener("click", async () => {
+    if (!boardCanEdit() || boardActions.length === 0) return;
+
+    const last = boardActions[boardActions.length - 1];
+    boardRedoStack.push({ id: last.id, data: { ...last } });
+
+    try {
+      await deleteDoc(doc(db, "rooms", activeRoomId, "boardActions", last.id));
+    } catch (error) {
+      console.error("Failed to undo:", error);
+      boardRedoStack.pop();
+    }
+  });
+}
+
+if (wbRedoBtn) {
+  wbRedoBtn.addEventListener("click", async () => {
+    if (!boardCanEdit() || boardRedoStack.length === 0) return;
+
+    const restore = boardRedoStack.pop();
+    const { id, ...data } = restore.data;
+
+    try {
+      await setDoc(
+        doc(db, "rooms", activeRoomId, "boardActions", restore.id),
+        data
+      );
+    } catch (error) {
+      console.error("Failed to redo:", error);
+      boardRedoStack.push(restore);
+    }
+  });
+}
+
+if (wbDeleteBtn) {
+  wbDeleteBtn.addEventListener("click", async () => {
+    if (!boardCanEdit()) return;
+
+    if (boardSelectedId) {
+      try {
+        await deleteDoc(
+          doc(db, "rooms", activeRoomId, "boardActions", boardSelectedId)
+        );
+        boardSelectedId = null;
+      } catch (error) {
+        console.error("Failed to delete selection:", error);
+      }
+      return;
+    }
+
+    if (boardActions.length === 0) return;
+    if (!confirm("Clear the whole whiteboard for everyone in this class?")) {
+      return;
+    }
+
+    try {
+      await Promise.all(
+        boardActions.map((action) =>
+          deleteDoc(doc(db, "rooms", activeRoomId, "boardActions", action.id))
+        )
+      );
+    } catch (error) {
+      console.error("Failed to clear whiteboard:", error);
+    }
+  });
+}
+
+// ---- Pointer interaction ----
+
+if (boardCanvas) {
+  boardCanvas.addEventListener("pointerdown", (event) => {
+    if (!boardCanEdit()) return;
+
+    const point = getCanvasPoint(event);
+
+    if (boardTool === "pen" || boardTool === "eraser") {
+      boardDrawing = true;
+      boardCanvas.setPointerCapture(event.pointerId);
+      boardCurrentStroke = {
+        type: "stroke",
+        tool: boardTool,
+        color: boardColor,
+        lineWidth: boardTool === "eraser" ? 18 : 3,
+        points: [point]
+      };
+    } else if (boardTool === "fill") {
+      addBoardAction({ type: "fill", x: point.x, y: point.y, color: boardColor });
+    } else if (boardTool === "text") {
+      const text = prompt("Enter text:");
+      if (text && text.trim()) {
+        addBoardAction({
+          type: "text",
+          x: point.x,
+          y: point.y,
+          text: text.trim(),
+          color: boardColor,
+          fontSize: 20
+        });
+      }
+    } else if (boardTool === "select") {
+      const threshold = 10;
+      const hit = [...boardActions].reverse().find((action) => {
+        if (action.type === "stroke") return strokeHitTest(action, point, threshold);
+        if (action.type === "text") return textHitTest(action, point);
+        return false;
+      });
+
+      boardSelectedId = hit ? hit.id : null;
+      redrawBoard();
+    }
+  });
+
+  boardCanvas.addEventListener("pointermove", (event) => {
+    if (!boardDrawing || !boardCurrentStroke) return;
+
+    const point = getCanvasPoint(event);
+    const last = boardCurrentStroke.points[boardCurrentStroke.points.length - 1];
+
+    if (Math.hypot(point.x - last.x, point.y - last.y) < 2) return;
+
+    boardCurrentStroke.points.push(point);
+
+    // Live local preview of just this in-progress stroke, drawn on
+    // top of the last synced state — cheap, and avoids re-running
+    // the whole replay (including flood fills) on every pointermove.
+    redrawBoard();
+    const ctx = boardCanvas.getContext("2d");
+    drawStrokeAction(ctx, boardCurrentStroke);
+  });
+
+  const finishStroke = () => {
+    if (!boardDrawing || !boardCurrentStroke) return;
+
+    boardDrawing = false;
+    const stroke = boardCurrentStroke;
+    boardCurrentStroke = null;
+
+    if (stroke.points.length > 0) {
+      addBoardAction(stroke);
+    }
+  };
+
+  boardCanvas.addEventListener("pointerup", finishStroke);
+  boardCanvas.addEventListener("pointercancel", finishStroke);
+  boardCanvas.addEventListener("pointerleave", finishStroke);
 }
 
 // ============================================================
@@ -3429,7 +3957,6 @@ function startScheduledClassesListener() {
     }
   );
 }
-
 if (scheduleClassBtn) {
   scheduleClassBtn.addEventListener("click", async () => {
     if (!currentUser) {
@@ -4030,7 +4557,7 @@ if (saveProfileNameBtn) {
       return;
     }
 
- const newName = profileNameInput?.value.trim();
+    const newName = profileNameInput?.value.trim();
 
     if (!newName) {
       alert("Enter a name first.");
@@ -4929,4 +5456,4 @@ onAuthStateChanged(auth, (user) => {
     if (chatWidget) chatWidget.style.display = "none";
   }
 });
- 
+
