@@ -417,6 +417,36 @@
               <button class="icon-btn">⛶</button>
             </div>
           </div>
+
+          <!-- Shared whiteboard — synced via rooms/{roomId}/boardActions
+               (script.js), only interactive once a call is active. -->
+          <div class="whiteboard-panel">
+            <div class="whiteboard-toolbar">
+              <button type="button" class="wb-tool-btn" id="wbLockBtn" title="Lock/unlock board (teacher only)" disabled>🔓</button>
+              <span class="wb-toolbar-sep"></span>
+              <button type="button" class="wb-tool-btn is-active" id="wbSelectBtn" data-tool="select" title="Select">🖱️</button>
+              <button type="button" class="wb-tool-btn" id="wbPenBtn" data-tool="pen" title="Pen" disabled>🖊️</button>
+              <button type="button" class="wb-tool-btn" id="wbFillBtn" data-tool="fill" title="Fill" disabled>🪣</button>
+              <button type="button" class="wb-tool-btn" id="wbTextBtn" data-tool="text" title="Text" disabled>A</button>
+              <button type="button" class="wb-tool-btn" id="wbEraserBtn" data-tool="eraser" title="Eraser" disabled>🧽</button>
+              <span class="wb-toolbar-sep"></span>
+              <button type="button" class="wb-tool-btn" id="wbUndoBtn" title="Undo" disabled>↶</button>
+              <button type="button" class="wb-tool-btn" id="wbRedoBtn" title="Redo" disabled>↷</button>
+              <button type="button" class="wb-tool-btn" id="wbDeleteBtn" title="Delete selected / clear">🗑️</button>
+            </div>
+            <div class="wb-color-row" id="wbColorRow" style="display:none;">
+              <button type="button" class="wb-color-swatch is-active" data-color="#241b38" style="background:#241b38;"></button>
+              <button type="button" class="wb-color-swatch" data-color="#e0301c" style="background:#e0301c;"></button>
+              <button type="button" class="wb-color-swatch" data-color="#2f6fed" style="background:#2f6fed;"></button>
+              <button type="button" class="wb-color-swatch" data-color="#2fb673" style="background:#2fb673;"></button>
+              <button type="button" class="wb-color-swatch" data-color="#f5c518" style="background:#f5c518;"></button>
+              <button type="button" class="wb-color-swatch" data-color="#ff7a2e" style="background:#ff7a2e;"></button>
+            </div>
+            <div class="wb-canvas-wrap">
+              <canvas id="boardCanvas" width="760" height="420"></canvas>
+              <p class="empty-state" id="wbLockedNotice" style="display:none;">The teacher has locked the whiteboard.</p>
+            </div>
+          </div>
         </div>
 
         <div class="video-classroom">
