@@ -3510,7 +3510,7 @@ function hexToRgb(hex) {
   };
 }
 
-// ---- Uploaded lesson material as the board's background ----
+/// ---- Uploaded lesson material as the board's background ----
 //
 // The latest uploaded lesson material (from the "Lesson upload"
 // dropzone) becomes the board's actual background whenever it's an
