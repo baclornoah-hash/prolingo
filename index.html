@@ -7,6 +7,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+
+<!-- Jitsi Meet — replaces the old custom WebRTC video layer.
+     The old WebRTC code (RTCPeerConnection, ICE signaling,
+     createRoom/joinRoom) is kept in script.js, dormant, until this
+     is confirmed working live — see the migration notes there. -->
+<script src="https://meet.jit.si/external_api.js"></script>
 </head>
 <body>
 
@@ -459,31 +465,39 @@
   </div>
 
   <div class="main-video-area">
-    <video
-      id="remoteVideo"
-      autoplay
-      playsinline
-    ></video>
+    <!-- Jitsi Meet embeds here — this is now the live video surface. -->
+    <div id="jitsi-container"></div>
 
-    <div
-      class="remote-video-placeholder"
-      id="remoteVideoPlaceholder"
-    >
-      Waiting for the teacher or another participant…
-    </div>
-
-    <div class="self-preview">
+    <!-- Legacy custom-WebRTC video elements — kept (not deleted) for
+         safety until Jitsi is confirmed working, but hidden by
+         default via .legacy-webrtc in style.css. -->
+    <div class="legacy-webrtc">
       <video
-        id="localVideo"
+        id="remoteVideo"
         autoplay
         playsinline
-        muted
       ></video>
-      <span id="videoLabel">You</span>
+
+      <div
+        class="remote-video-placeholder"
+        id="remoteVideoPlaceholder"
+      >
+        Waiting for the teacher or another participant…
+      </div>
+
+      <div class="self-preview">
+        <video
+          id="localVideo"
+          autoplay
+          playsinline
+          muted
+        ></video>
+        <span id="videoLabel">You</span>
+      </div>
     </div>
   </div>
 
-  <div class="video-tools">
+  <div class="video-tools legacy-webrtc">
     <button class="pill-toggle is-on" id="micToggle">Mic</button>
     <button class="pill-toggle" id="cameraToggle">Camera</button>
     <button class="pill-toggle" id="filterToggle">Smooth skin</button>
@@ -491,7 +505,7 @@
 
 </div>
 
-        <div class="mic-visualizer">
+        <div class="mic-visualizer legacy-webrtc">
   <canvas id="micWaveform"></canvas>
 </div>
         
