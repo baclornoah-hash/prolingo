@@ -1391,11 +1391,7 @@ async function openLessonDetail(lesson) {
       showView("classroom");
 
       try {
-        if (canEdit) {
-          await createRoom({ explicitRoomId: lesson.roomId });
-        } else {
-          await joinRoom(lesson.roomId);
-        }
+        await startClassSession({ roomId: lesson.roomId, isHost: canEdit });
       } catch (error) {
         console.error("Failed to join scheduled call:", error);
         alert("Couldn't join the call: " + error.message);
@@ -2795,6 +2791,144 @@ const leaveRoomBtn = $("leaveRoomBtn");
 const roomInput = $("roomInput");
 const remoteVideo = $("remoteVideo");
 
+// ============================================================
+// CLASSROOM — JITSI MEET (current video layer)
+//
+// Replaces the custom WebRTC system below for actual video/audio —
+// Jitsi handles camera, mic, and the call itself inside its own
+// embedded iframe. Firebase keeps doing everything it already did:
+// tracking who created/joined a room (roster), the board-lock flag,
+// and the whiteboard (rooms/{roomId}/boardActions, untouched).
+//
+// The old WebRTC functions (createRoom/joinRoom/leaveRoom,
+// RTCPeerConnection, ICE signaling) are kept below, fully intact and
+// still callable, but nothing in the UI invokes them anymore — they
+// stay as a safety net until Jitsi is confirmed working live, at
+// which point they can be removed in a follow-up cleanup pass.
+// ============================================================
+
+const JITSI_DOMAIN = "meet.jit.si";
+let jitsiApi = null;
+
+function startJitsi(roomId) {
+  const container = $("jitsi-container");
+
+  if (!container) {
+    console.error("Jitsi container not found.");
+    return;
+  }
+
+  if (!roomId) {
+    alert("No room ID was provided.");
+    return;
+  }
+
+  stopJitsi();
+
+  const displayName =
+    sessionStorage.getItem("prolingo_name") || "ProLingo User";
+
+  jitsiApi = new JitsiMeetExternalAPI(JITSI_DOMAIN, {
+    roomName: "ProLingo-" + roomId,
+    width: "100%",
+    height: "100%",
+    parentNode: container,
+    userInfo: { displayName },
+    configOverwrite: { prejoinPageEnabled: true }
+  });
+
+  updateRoomStatus("connecting");
+
+  jitsiApi.addEventListener("videoConferenceJoined", () => {
+    updateRoomStatus("connected");
+  });
+
+  jitsiApi.addEventListener("videoConferenceLeft", () => {
+    updateRoomStatus("idle");
+  });
+
+  jitsiApi.addEventListener("readyToClose", () => {
+    leaveRoomBtn?.click();
+  });
+}
+
+function stopJitsi() {
+  if (jitsiApi) {
+    try {
+      jitsiApi.dispose();
+    } catch (error) {
+      console.warn("Jitsi dispose failed:", error);
+    }
+    jitsiApi = null;
+  }
+
+  const container = $("jitsi-container");
+  if (container) container.innerHTML = "";
+}
+
+// Orchestrates one Jitsi session: sets up (or joins) the lightweight
+// rooms/{roomId} Firestore doc that the roster, board-lock, and
+// whiteboard all key off of, then starts Jitsi itself. This is what
+// every "Start class" / "Join now" / "Start call" / "Join call" /
+// "Create room" / "Join room" control calls now.
+async function startClassSession({ roomId, isHost, scheduledClassId }) {
+  if (!currentUser) {
+    alert("Please sign in first.");
+    return;
+  }
+
+  if (!roomId) {
+    alert("No room ID was provided.");
+    return;
+  }
+
+  resetPeerConnection();
+
+  activeRoomId = roomId;
+  isRoomHost = Boolean(isHost);
+  activeScheduledClassId = scheduledClassId || null;
+
+  const roomRef = doc(db, "rooms", roomId);
+
+  if (isHost) {
+    await setDoc(
+      roomRef,
+      {
+        createdBy: currentUser.uid,
+        createdByName: sessionStorage.getItem("prolingo_name") || "Host",
+        createdAt: Date.now()
+      },
+      { merge: true }
+    );
+
+    if (scheduledClassId) {
+      try {
+        await updateDoc(doc(db, "scheduledClasses", scheduledClassId), {
+          status: "live"
+        });
+      } catch (error) {
+        console.error("Failed to mark scheduled class live:", error);
+      }
+    }
+  } else {
+    await setDoc(
+      roomRef,
+      {
+        joinedBy: currentUser.uid,
+        joinedByName: sessionStorage.getItem("prolingo_name") || "Guest"
+      },
+      { merge: true }
+    );
+  }
+
+  setText("roomCode", roomId);
+  if (roomInput) roomInput.value = roomId;
+
+  attachRoomListener(roomRef, null);
+  startBoardListener(roomId);
+  startJitsi(roomId);
+}
+
 const rtcConfig = {
   iceServers: [
     {
@@ -2924,6 +3058,7 @@ function resetPeerConnection() {
   setRemoteVisible(false);
   updateRoomStatus("idle");
   stopBoardListener();
+  stopJitsi();
 }
 
 // Best effort only: restartIce() re-negotiates from the caller's
@@ -3023,7 +3158,10 @@ function attachRoomListener(roomRef, pc) {
     const data = snapshot.data();
 
     if (!data) {
-      if (peerConnection === pc) {
+      // pc is null on the Jitsi path (no RTCPeerConnection to compare
+      // against) — in that case any active session for this room
+      // being deleted means it's over, full stop.
+      if (pc === null || peerConnection === pc) {
         alert("The other participant ended the class.");
         resetPeerConnection();
         setText("roomCode", "—");
@@ -3036,7 +3174,9 @@ function attachRoomListener(roomRef, pc) {
     renderRoomRoster(data);
     applyBoardLockState(Boolean(data.boardLocked));
 
+    // Legacy WebRTC-only step — skipped entirely on the Jitsi path.
     if (
+      pc &&
       data.answer &&
       pc.signalingState !== "closed" &&
       !pc.currentRemoteDescription
@@ -3214,7 +3354,8 @@ if (createRoomBtn) {
     createRoomBtn.disabled = true;
 
     try {
-      await createRoom();
+      const roomId = doc(collection(db, "rooms")).id;
+      await startClassSession({ roomId, isHost: true });
     } catch (error) {
       console.error("Failed to create room:", error);
       alert("Couldn't create the room: " + error.message);
@@ -3229,10 +3370,15 @@ if (joinRoomBtn) {
   joinRoomBtn.addEventListener("click", async () => {
     const roomId = roomInput?.value.trim();
 
+    if (!roomId) {
+      alert("Enter a room code first.");
+      return;
+    }
+
     joinRoomBtn.disabled = true;
 
     try {
-      await joinRoom(roomId);
+      await startClassSession({ roomId, isHost: false });
     } catch (error) {
       console.error("Failed to join room:", error);
       alert("Couldn't join the room: " + error.message);
@@ -3510,7 +3656,7 @@ function hexToRgb(hex) {
   };
 }
 
-/// ---- Uploaded lesson material as the board's background ----
+// ---- Uploaded lesson material as the board's background ----
 //
 // The latest uploaded lesson material (from the "Lesson upload"
 // dropzone) becomes the board's actual background whenever it's an
@@ -3970,12 +4116,18 @@ function renderScheduledClasses() {
       button.classList.add("join-btn--wait");
     } else if (item.status === "live") {
       button.textContent = isOwner ? "Rejoin" : "Join now";
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         showView("classroom");
 
-        joinRoom(item.roomId).catch((error) => {
+        try {
+          await startClassSession({
+            roomId: item.roomId,
+            isHost: isOwner,
+            scheduledClassId: isOwner ? item.id : null
+          });
+        } catch (error) {
           alert("Couldn't join: " + error.message);
-        });
+        }
       });
     } else if (isOwner && (role === "teacher" || role === "admin")) {
       button.textContent = timeReached ? "Start class" : "Start early";
@@ -3983,8 +4135,9 @@ function renderScheduledClasses() {
         showView("classroom");
 
         try {
-          await createRoom({
-            explicitRoomId: item.roomId,
+          await startClassSession({
+            roomId: item.roomId,
+            isHost: true,
             scheduledClassId: item.id
           });
         } catch (error) {
