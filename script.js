@@ -25,7 +25,8 @@ import {
   where,
   orderBy,
   limit,
-  runTransaction
+  runTransaction,
+  arrayUnion
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // (Firebase Storage import removed — uploads now go to Cloudinary,
@@ -2807,10 +2808,51 @@ const remoteVideo = $("remoteVideo");
 // which point they can be removed in a follow-up cleanup pass.
 // ============================================================
 
-const JITSI_DOMAIN = "meet.jit.si";
+// JaaS (not the free meet.jit.si) — removes the extra Google/
+// Facebook/GitHub login prompt, since the JWT below already proves
+// who this person is (via Firebase Auth) without them re-logging in
+// anywhere. The actual signing happens server-side in the Cloudflare
+// Worker (jaas-jwt-worker.js) — the private key must never be in
+// this file, since anything here ships to every visitor's browser.
+const JITSI_DOMAIN = "8x8.vc";
+const JAAS_APP_ID = "vpaas-magic-cookie-10d84a29a4de47cfb0f66b007bdeeaa6";
+
+// TODO: fill this in once the Worker is deployed — Cloudflare gives
+// you this URL right after deploying, e.g.
+// "https://jaas-jwt-worker.yoursubdomain.workers.dev"
+const JWT_WORKER_URL = "YOUR_CLOUDFLARE_WORKER_URL";
+
 let jitsiApi = null;
 
-function startJitsi(roomId) {
+async function fetchJaasToken() {
+  if (!currentUser) throw new Error("Not signed in.");
+
+  if (JWT_WORKER_URL === "YOUR_CLOUDFLARE_WORKER_URL") {
+    throw new Error(
+      "JWT_WORKER_URL isn't set yet — paste your deployed Worker's URL into script.js."
+    );
+  }
+
+  const response = await fetch(JWT_WORKER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      uid: currentUser.uid,
+      name: sessionStorage.getItem("prolingo_name") || "ProLingo User",
+      moderator: isRoomHost
+    })
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Token request failed (${response.status}): ${detail}`);
+  }
+
+  const data = await response.json();
+  return data.token;
+}
+
+async function startJitsi(roomId) {
   const container = $("jitsi-container");
 
   if (!container) {
@@ -2824,20 +2866,30 @@ function startJitsi(roomId) {
   }
 
   stopJitsi();
+  updateRoomStatus("connecting");
+
+  let jwt;
+  try {
+    jwt = await fetchJaasToken();
+  } catch (error) {
+    console.error("Failed to get a JaaS token:", error);
+    alert("Couldn't start the video call: " + error.message);
+    updateRoomStatus("idle");
+    return;
+  }
 
   const displayName =
     sessionStorage.getItem("prolingo_name") || "ProLingo User";
 
   jitsiApi = new JitsiMeetExternalAPI(JITSI_DOMAIN, {
-    roomName: "ProLingo-" + roomId,
+    roomName: `${JAAS_APP_ID}/ProLingo-${roomId}`,
+    jwt,
     width: "100%",
     height: "100%",
     parentNode: container,
     userInfo: { displayName },
     configOverwrite: { prejoinPageEnabled: true }
   });
-
-  updateRoomStatus("connecting");
 
   jitsiApi.addEventListener("videoConferenceJoined", () => {
     updateRoomStatus("connected");
@@ -2914,8 +2966,11 @@ async function startClassSession({ roomId, isHost, scheduledClassId }) {
     await setDoc(
       roomRef,
       {
-        joinedBy: currentUser.uid,
-        joinedByName: sessionStorage.getItem("prolingo_name") || "Guest"
+        guests: arrayUnion({
+          uid: currentUser.uid,
+          name: sessionStorage.getItem("prolingo_name") || "Guest",
+          joinedAt: Date.now()
+        })
       },
       { merge: true }
     );
@@ -2926,7 +2981,7 @@ async function startClassSession({ roomId, isHost, scheduledClassId }) {
 
   attachRoomListener(roomRef, null);
   startBoardListener(roomId);
-  startJitsi(roomId);
+  await startJitsi(roomId);
 }
 
 const rtcConfig = {
@@ -2976,8 +3031,10 @@ function updateRoomStatus(state) {
 }
 
 // ------------------------------------------------------------
-// Roster — driven by the room document itself (createdByName /
-// joinedByName), so both sides see who else is in the room.
+// Roster — driven by the room document itself: createdByName for
+// the host, plus a `guests` array that any number of people can
+// append themselves to (via arrayUnion) — not just one. Dedup by
+// uid so a rejoin doesn't show someone twice.
 // ------------------------------------------------------------
 function renderRoomRoster(data) {
   const rosterList = $("rosterList");
@@ -2992,12 +3049,17 @@ function renderRoomRoster(data) {
     });
   }
 
-  if (data?.joinedByName) {
+  const guestsByUid = new Map();
+  (data?.guests || []).forEach((guest) => {
+    if (guest?.uid) guestsByUid.set(guest.uid, guest);
+  });
+
+  guestsByUid.forEach((guest) => {
     people.push({
-      name: data.joinedByName,
-      role: data.joinedBy === currentUser?.uid ? "You" : "Guest"
+      name: guest.name || "Guest",
+      role: guest.uid === currentUser?.uid ? "You" : "Guest"
     });
-  }
+  });
 
   rosterList.replaceChildren();
 
